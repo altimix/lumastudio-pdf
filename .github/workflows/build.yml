@@ -1,0 +1,50 @@
+name: Check and package desktop
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Install test browser
+        run: npx playwright install chromium
+      - name: Verify editor workflows
+        run: npm run test:e2e
+      - name: Keep failed browser test evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Browser-test-results-${{ runner.os }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+      - name: Package unsigned Windows preview
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win portable
+      - name: Package unsigned Mac preview
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac zip --x64 --arm64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LumaStudio-PDF-${{ runner.os }}
+          path: |
+            release/*.exe
+            release/*.zip

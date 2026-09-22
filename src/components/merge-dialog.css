@@ -1,0 +1,38 @@
+.merge-backdrop { z-index: 46; }
+.merge-modal { width: 640px; }
+.merge-intro { font-size: 12px; line-height: 1.85; margin: 0 0 18px !important; }
+.merge-current { display: flex; align-items: center; gap: 9px; padding: 12px 14px; background: #eff6f2; color: #38695b; border: 1px solid #dae8df; border-radius: 7px; margin-bottom: 19px; font-size: 11px; }
+.merge-current svg { flex-shrink: 0; }
+.merge-list-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 11px; color: #71877d; }
+.merge-list-heading > span:first-child { color: #3d5e52; font-weight: 600; }
+.merge-file-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: min(320px, 40dvh); overflow: auto; border: 1px solid #dde7e1; border-radius: 8px; }
+.merge-file-list > li { position: relative; display: flex; align-items: center; gap: 10px; min-height: 70px; padding: 12px 13px; background: #fcfefd; }
+.merge-file-list > li + li { border-top: 1px solid #e6ece8; }
+.merge-file-list > li[draggable="true"] { cursor: grab; }
+.merge-file-list > li[draggable="true"]:active { cursor: grabbing; }
+.merge-drag-handle { flex-shrink: 0; display: flex; align-items: center; color: #91a79a; }
+.merge-file-list > li.merge-file-dragging { opacity: .45; background: #edf4ef; }
+.merge-file-list > li.merge-drop-before::before,
+.merge-file-list > li.merge-drop-after::after { content: ""; position: absolute; left: 4px; right: 4px; height: 3px; background: #2d8061; border-radius: 2px; pointer-events: none; z-index: 1; }
+.merge-file-list > li.merge-drop-before::before { top: 0; }
+.merge-file-list > li.merge-drop-after::after { bottom: 0; }
+.merge-file-order { width: 20px; flex-shrink: 0; text-align: center; color: #789285; font-size: 11px; font-variant-numeric: tabular-nums; }
+.merge-file-icon { flex-shrink: 0; color: #698b7b; }
+.merge-file-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.merge-file-info strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.65; color: #344c40; }
+.merge-file-info small { font-size: 10px; color: #82988a; font-variant-numeric: tabular-nums; }
+.merge-file-controls { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.merge-file-controls .icon-button { width: 32px; height: 34px; }
+.merge-file-controls .merge-remove:not(:disabled):hover { color: #af4343; background: #fbedeb; }
+.merge-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 140px; padding: 20px; border: 1px dashed #ceded4; border-radius: 8px; margin-bottom: 12px; color: #809788; font-size: 12px; }
+.merge-add { justify-content: center; }
+.merge-error { margin: 13px 0 0 !important; font-size: 12px; }
+.merge-spinner { animation: spin 1s linear infinite; }
+.merge-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 600px) {
+  .merge-modal { padding: 20px; }
+  .merge-file-list > li { padding: 10px 8px; gap: 6px; }
+  .merge-file-icon { display: none; }
+  .merge-file-controls .icon-button { width: 30px; }
+  .merge-modal .modal-actions { flex-wrap: wrap; }
+}

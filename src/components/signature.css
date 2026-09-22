@@ -1,0 +1,30 @@
+.signature-backdrop{z-index:48}
+.signature-modal{width:620px}
+.signature-intro{font-size:12px;line-height:1.85;margin:0 0 19px!important}
+.signature-file-card{display:flex;align-items:center;gap:13px;border:1px solid #d9e5df;background:#f5f9f7;padding:15px;border-radius:8px;margin-bottom:11px;color:#3a7064}
+.signature-file-card>svg{flex-shrink:0}
+.signature-file-card>div{min-width:0;display:flex;flex-direction:column;gap:4px}
+.signature-file-card span{font-size:10px;color:#718f83}
+.signature-file-card strong{font-size:12px;overflow-wrap:anywhere;font-weight:600}
+.signature-file-card small{font-size:10px;color:#82998f}
+.signature-unlock{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:11px;margin-top:18px}
+.signature-unlock>button{height:39px;white-space:nowrap}
+.signature-details{border:1px solid #d9e5df;border-radius:8px;padding:16px;margin-top:19px;background:#fcfefd}
+.signature-verified{display:flex;gap:7px;align-items:center;color:#2d7764;font-size:11px;font-weight:600;margin-bottom:13px}
+.signature-details dl{margin:0;display:grid;gap:11px}
+.signature-details dl>div{display:grid;grid-template-columns:102px minmax(0,1fr);gap:10px;font-size:11px;line-height:1.65}
+.signature-details dt{color:#71877d}
+.signature-details dd{margin:0;color:#2e4740;overflow-wrap:anywhere}
+.signature-details dd.signature-fingerprint{font-family:Consolas,Monaco,monospace;font-size:9px;letter-spacing:.03em}
+.signature-self-signed{display:flex;align-items:flex-start;gap:7px;padding:10px 12px;margin:15px 0 0!important;border-radius:5px;background:#fff6e5;color:#916126!important;font-size:11px;line-height:1.7}
+.signature-self-signed svg{flex-shrink:0;margin-top:2px}
+.signature-options{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:19px}
+.signature-options label>span{color:#92a098;font-size:9px;font-weight:400;display:inline}
+.signature-private{display:flex;align-items:flex-start;gap:6px;font-size:10px;line-height:1.8;color:#81958b!important;margin:17px 0 0!important}
+.signature-private svg{flex-shrink:0;margin-top:2px}
+.signature-notice{display:flex;gap:9px;align-items:flex-start;padding:16px;background:#f2f6f4;border-radius:7px;color:#597a6c}
+.signature-notice svg{flex-shrink:0;margin-top:3px}
+.signature-notice p{margin:0!important;font-size:12px;line-height:1.85}
+.signature-error{margin-top:15px!important;font-size:12px}
+.signature-spinner{animation:spin 1s linear infinite}
+@media(max-width:600px){.signature-modal{padding:20px}.signature-unlock{grid-template-columns:1fr}.signature-options{grid-template-columns:1fr}.signature-details dl>div{grid-template-columns:1fr;gap:2px}.signature-private{font-size:9px}.signature-modal .modal-actions{flex-wrap:wrap}}

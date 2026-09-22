@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:" />
+    <title>LumaStudio PDF — 印刷</title>
+    <link rel="stylesheet" href="./print.css" />
+  </head>
+  <body>
+    <p id="progress" role="status">印刷するPDFを準備しています…</p>
+    <main id="pages"></main>
+    <script type="module" src="./print.mjs"></script>
+  </body>
+</html>

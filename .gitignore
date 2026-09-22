@@ -1,0 +1,21 @@
+# Local credentials and environment settings
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+*.lumapdf
+
+node_modules/
+dist/
+release/
+test-results/
+playwright-report/
+tmp/
+*.tsbuildinfo
+*.log
+public/pdfjs/
+.DS_Store
+/NUL

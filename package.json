@@ -1,0 +1,97 @@
+{
+  "name": "lumastudio-pdf",
+  "productName": "LumaStudio PDF",
+  "version": "0.1.0",
+  "description": "PDFに記入して、印鑑を押して、すぐに返送。Windows・macOS向けPDF編集アプリ。",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": "altimix",
+  "scripts": {
+    "dev": "node scripts/web-dev.mjs",
+    "predev": "node scripts/copy-pdf-assets.mjs",
+    "predesktop:dev": "node scripts/copy-pdf-assets.mjs",
+    "prebuild": "node scripts/copy-pdf-assets.mjs",
+    "desktop:dev": "node scripts/dev.mjs",
+    "build": "tsc -b && vite build",
+    "desktop": "npm run build && electron .",
+    "test": "vitest run && node --test electron/pdf-files.test.cjs",
+    "test:e2e": "playwright test",
+    "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:dir": "npm run build && electron-builder --dir"
+  },
+  "build": {
+    "appId": "jp.altimix.lumastudio-pdf",
+    "productName": "LumaStudio PDF",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "server/ai.cjs",
+      "server/signature.cjs",
+      "node_modules/pdfjs-dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts/setup-printer.ps1",
+        "to": "setup-printer.ps1"
+      },
+      {
+        "from": "scripts/install-macos-pdf-service.sh",
+        "to": "install-macos-pdf-service.sh"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF document",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    }
+  },
+  "dependencies": {
+    "@signpdf/placeholder-pdf-lib": "^3.3.0",
+    "@signpdf/signer-p12": "^3.3.0",
+    "@signpdf/signpdf": "^3.3.0",
+    "lucide-react": "^1.47.0",
+    "node-forge": "^1.4.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "prettier": "^3.9.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}

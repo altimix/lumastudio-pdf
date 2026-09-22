@@ -1,0 +1,169 @@
+import { describe, expect, it } from 'vitest'
+import { PDFDocument } from 'pdf-lib'
+import { decodeProject, encodeProject, type PdfProject } from './project'
+
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPIYAAAAASUVORK5CYII='
+const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2Q=='
+const encoder = new TextEncoder()
+
+function example(): PdfProject {
+  return {
+    filename: '申込書_結合.pdf',
+    original: encoder.encode('%PDF-1.7\n% codec fixture; the app validates actual PDF structure when opening.\n%%EOF\n'),
+    pages: [
+      { id: 'page-two', sourceIndex: 1, width: 600, height: 800, rotation: 90, originalRotation: 0, viewportTransform: [1, 0, 0, -1, 0, 800], sourceName: '追加.pdf', sourcePage: 1 },
+      { id: 'page-one', sourceIndex: 0, width: 600, height: 800, rotation: 270, originalRotation: 0, viewportTransform: [1, 0, 0, -1, 0, 800] },
+    ],
+    annotations: [
+      { id: 'name', pageId: 'page-one', type: 'text', x: 20, y: 30, width: 150, height: 30, text: '架空 太郎', color: '#25383c', fontSize: 14 },
+      { id: 'seal', pageId: 'page-two', type: 'stamp', x: 450, y: 650, width: 60, height: 60, text: '架空', stampShape: 'circle', color: '#a32' },
+      { id: 'image', pageId: 'page-two', type: 'image', x: 80, y: 80, width: 30, height: 30, dataUrl: PNG },
+      { id: 'photo', pageId: 'page-one', type: 'image', x: 80, y: 80, width: 30, height: 30, dataUrl: JPEG },
+      { id: 'check', pageId: 'page-one', type: 'check', x: 180, y: 180, width: 20, height: 20 },
+    ],
+  }
+}
+
+function rawExample(): Record<string, any> {
+  return JSON.parse(new TextDecoder().decode(encodeProject(example())))
+}
+
+function decodeRaw(value: unknown) {
+  return decodeProject(encoder.encode(JSON.stringify(value)))
+}
+
+describe('editable PDF project', () => {
+  it('round-trips original PDF bytes, page order and rotation, annotation IDs, text, seals and images', async () => {
+    const pdf = await PDFDocument.create()
+    pdf.addPage([600, 800])
+    pdf.addPage([600, 800])
+    const project = example()
+    project.original = await pdf.save()
+    const original = project.original.slice()
+    const bytes = encodeProject(project)
+    const restored = decodeProject(bytes)
+    expect(restored).toEqual(project)
+    expect(restored.pages.map(page => [page.sourceIndex, page.rotation])).toEqual([[1, 90], [0, 270]])
+    expect(restored.annotations.map(annotation => annotation.id)).toEqual(['name', 'seal', 'image', 'photo', 'check'])
+    expect((await PDFDocument.load(restored.original)).getPageCount()).toBe(2)
+    expect(project.original).toEqual(original)
+    expect(restored.pages).not.toBe(project.pages)
+    expect(restored.annotations).not.toBe(project.annotations)
+  })
+
+  it('encodes large buffers in chunks without corrupting base64 boundaries or typed-array subviews', () => {
+    const backing = new Uint8Array(120_003)
+    const original = backing.subarray(13, 110_014)
+    original.set(encoder.encode('%PDF-1.7\n'))
+    for (let index = 9; index < original.length; index++) original[index] = index % 256
+    const project = { ...example(), original }
+    expect(decodeProject(encodeProject(project)).original).toEqual(original)
+  })
+
+  it('only saves allowed document fields and drops unrelated metadata on decode', () => {
+    const project = example()
+    const extras = {
+      ...project,
+      profile: { name: 'PRIVATE PROFILE', account: 'PRIVATE ACCOUNT' },
+      stampLibrary: ['PRIVATE LIBRARY'],
+      apiKey: 'PRIVATE API KEY',
+    }
+    Object.assign(extras.pages[0], { profile: 'PRIVATE PAGE METADATA' })
+    Object.assign(extras.annotations[0], { apiKey: 'PRIVATE ANNOTATION METADATA' })
+    const bytes = encodeProject(extras)
+    const serialized = new TextDecoder().decode(bytes)
+    expect(serialized).not.toContain('PRIVATE')
+    const raw = JSON.parse(serialized)
+    Object.assign(raw, { apiKey: 'PRIVATE API KEY', profile: { account: 'PRIVATE ACCOUNT' }, '__proto__': { poisoned: true } })
+    raw.pages[0].path = 'PRIVATE SOURCE PATH'
+    raw.annotations[0].settings = 'PRIVATE SETTINGS'
+    const restored = decodeRaw(raw)
+    expect(Object.keys(restored).sort()).toEqual(['annotations', 'filename', 'original', 'pages'])
+    expect(new TextDecoder().decode(encodeProject(restored))).not.toContain('PRIVATE')
+  })
+
+  it.each([
+    ['wrong app', (raw: any) => { raw.app = 'another editor' }, /LumaStudio/],
+    ['future version', (raw: any) => { raw.version = 2 }, /バージョン/],
+    ['missing version', (raw: any) => { delete raw.version }, /バージョン/],
+    ['empty page list', (raw: any) => { raw.pages = [] }, /ページ数/],
+    ['too many pages', (raw: any) => { raw.pages = Array(201).fill(raw.pages[0]) }, /ページ数/],
+    ['duplicate page ids', (raw: any) => { raw.pages[1].id = raw.pages[0].id }, /ページIDが重複/],
+    ['negative source index', (raw: any) => { raw.pages[0].sourceIndex = -1 }, /ページ番号/],
+    ['out-of-range source index', (raw: any) => { raw.pages[0].sourceIndex = 200 }, /ページ番号/],
+    ['fractional source index', (raw: any) => { raw.pages[0].sourceIndex = 1.5 }, /整数/],
+    ['invalid page rotation', (raw: any) => { raw.pages[0].rotation = 45 }, /回転/],
+    ['invalid original rotation', (raw: any) => { raw.pages[0].originalRotation = -90 }, /回転/],
+    ['zero width', (raw: any) => { raw.pages[0].width = 0 }, /幅/],
+    ['huge height', (raw: any) => { raw.pages[0].height = 14401 }, /高さ/],
+    ['missing transform', (raw: any) => { delete raw.pages[0].viewportTransform }, /座標変換/],
+    ['short transform', (raw: any) => { raw.pages[0].viewportTransform = [1, 0] }, /座標変換/],
+    ['singular transform', (raw: any) => { raw.pages[0].viewportTransform = [1, 2, 2, 4, 0, 0] }, /座標変換/],
+    ['overflowing determinant', (raw: any) => { raw.pages[0].viewportTransform = [1e308, 0, 0, 1e308, 0, 0] }, /座標変換/],
+    ['unknown page reference', (raw: any) => { raw.annotations[0].pageId = 'missing' }, /記入先のページ/],
+    ['duplicate annotation ids', (raw: any) => { raw.annotations[1].id = raw.annotations[0].id }, /記入のIDが重複/],
+    ['unsupported annotation type', (raw: any) => { raw.annotations[0].type = 'script' }, /種類/],
+    ['negative x', (raw: any) => { raw.annotations[0].x = -1 }, /横位置/],
+    ['annotation outside page', (raw: any) => { raw.annotations[0].x = 590 }, /範囲/],
+    ['negative annotation width', (raw: any) => { raw.annotations[0].width = -1 }, /幅/],
+    ['too much text', (raw: any) => { raw.annotations[0].text = '文'.repeat(3001) }, /3000文字/],
+    ['font too small', (raw: any) => { raw.annotations[0].fontSize = 5 }, /文字サイズ/],
+    ['font too large', (raw: any) => { raw.annotations[0].fontSize = 97 }, /文字サイズ/],
+    ['CSS color injection', (raw: any) => { raw.annotations[0].color = 'url(https://example.test/a)' }, /色/],
+    ['unknown stamp shape', (raw: any) => { raw.annotations[1].stampShape = 'triangle' }, /印鑑の形/],
+    ['missing image', (raw: any) => { delete raw.annotations[2].dataUrl }, /画像/],
+    ['remote image', (raw: any) => { raw.annotations[2].dataUrl = 'https://example.test/a.png' }, /PNGまたはJPEG/],
+    ['SVG image', (raw: any) => { raw.annotations[2].dataUrl = 'data:image/svg+xml;base64,PHN2Zy8+' }, /PNGまたはJPEG/],
+    ['fake PNG', (raw: any) => { raw.annotations[2].dataUrl = `data:image/png;base64,${btoa('<script>bad</script>')}` }, /PNG画像のヘッダー/],
+    ['fake JPEG', (raw: any) => { raw.annotations[3].dataUrl = `data:image/jpeg;base64,${btoa('<script>bad</script>')}` }, /JPEG画像のヘッダー/],
+    ['invalid base64 characters', (raw: any) => { raw.original = '!!!!' }, /Base64/],
+    ['invalid base64 padding', (raw: any) => { raw.original = 'QQ=A' }, /Base64/],
+    ['noncanonical base64 padding bits', (raw: any) => { raw.original = 'QR==' }, /Base64/],
+    ['wrong PDF header', (raw: any) => { raw.original = btoa('<html>not a PDF</html>') }, /PDFのヘッダー/],
+    ['empty PDF', (raw: any) => { raw.original = '' }, /空か/],
+    ['too many annotations', (raw: any) => { raw.annotations = Array(2001).fill(raw.annotations[0]) }, /2000個/],
+  ])('rejects %s', (_, mutate, message) => {
+    const raw = rawExample()
+    mutate(raw)
+    expect(() => decodeRaw(raw)).toThrow(message)
+  })
+
+  it('rejects nonfinite values on encode before JSON could convert them to null', () => {
+    const project = example()
+    project.pages[0].width = Infinity
+    expect(() => encodeProject(project)).toThrow(/幅/)
+    project.pages[0].width = 600
+    project.annotations[0].y = NaN
+    expect(() => encodeProject(project)).toThrow(/縦位置/)
+  })
+
+  it('rejects oversized projects and original PDF inputs before decoding or allocating base64', () => {
+    expect(() => decodeProject(new Uint8Array(100 * 1024 * 1024 + 1))).toThrow(/100MB/)
+    const project = example()
+    project.original = new Uint8Array(50 * 1024 * 1024 + 1)
+    project.original.set(encoder.encode('%PDF-1.7\n'))
+    expect(() => encodeProject(project)).toThrow(/50MB/)
+  })
+
+  it('rejects an oversized encoded source before allocating its decoded bytes', () => {
+    const raw = rawExample()
+    raw.original = 'A'.repeat(Math.ceil(50 * 1024 * 1024 / 3) * 4 + 4)
+    expect(() => decodeRaw(raw)).toThrow(/50MB/)
+  })
+
+  it('rejects images over 2 MB', () => {
+    const raw = rawExample()
+    raw.annotations[2].dataUrl = `data:image/png;base64,${'A'.repeat(Math.ceil(2 * 1024 * 1024 / 3) * 4 + 4)}`
+    expect(() => decodeRaw(raw)).toThrow(/2MB/)
+  })
+
+  it.each([
+    new Uint8Array(),
+    encoder.encode('{'),
+    encoder.encode('null'),
+    encoder.encode('[]'),
+    new Uint8Array([123, 34, 255, 34, 58, 49, 125]),
+  ])('rejects empty, malformed and invalid UTF-8 documents', bytes => {
+    expect(() => decodeProject(bytes)).toThrow(/作業ファイル/)
+  })
+})

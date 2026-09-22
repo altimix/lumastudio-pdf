@@ -1,0 +1,31 @@
+.stamp-import-backdrop{z-index:45}
+.stamp-import-modal{width:660px}
+.stamp-import-intro{font-size:12px;line-height:1.8}
+.stamp-import-name{margin:18px 0}
+.stamp-comparison{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.stamp-comparison figure{min-width:0;margin:0}
+.stamp-comparison figcaption{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:11px;font-weight:650;color:#4f6f68}
+.stamp-comparison figcaption span{font-size:9px;font-weight:500;background:#edf4f0;padding:1px 6px;border-radius:3px;color:#7b958c}
+.stamp-comparison figure>small{display:block;margin-top:6px;font-size:10px;color:#8b9e98}
+.stamp-checkerboard{display:flex;align-items:center;justify-content:center;height:208px;border:1px solid #dbe5e1;border-radius:7px;overflow:hidden;background-color:#fff;background-image:linear-gradient(45deg,#e3e9e5 25%,transparent 25%),linear-gradient(-45deg,#e3e9e5 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e3e9e5 75%),linear-gradient(-45deg,transparent 75%,#e3e9e5 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
+.stamp-checkerboard img{width:100%;height:100%;padding:15px;object-fit:contain}
+.stamp-checkerboard>span{font-size:11px;color:#8d9f96;background:#fffffff2;padding:5px 10px;border-radius:4px}
+.stamp-mode-fieldset{border:0;padding:0;margin:20px 0 0;min-width:0}
+.stamp-mode-fieldset legend{font-size:11px;font-weight:650;color:#627e75;margin-bottom:8px;padding:0}
+.stamp-mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stamp-mode-options label{flex-direction:row;align-items:center;gap:8px;border:1px solid #dde6e1;border-radius:6px;padding:10px 12px;cursor:pointer;font-size:11px;font-weight:500}
+.stamp-mode-options label.stamp-mode-active{border-color:#699b8d;background:#f1f7f4;color:#245e52}
+.stamp-mode-options input,.stamp-crop input{width:15px;height:15px;min-width:15px;margin:0;accent-color:var(--green)}
+.stamp-mode-description{font-size:11px;color:#85968e!important;margin:9px 0 16px!important;min-height:20px}
+.stamp-threshold{gap:3px;margin-bottom:18px}
+.stamp-threshold>span:first-child{display:flex;justify-content:space-between;align-items:center}
+.stamp-threshold output{font-size:10px;color:#6d8d80;min-width:27px;text-align:right}
+.stamp-threshold input:disabled{opacity:.4}
+.stamp-range-ends{display:flex;justify-content:space-between;color:#91a39a}
+.stamp-range-ends small{font-size:10px;font-weight:400}
+.stamp-crop{flex-direction:row;align-items:center;font-size:11px;font-weight:500;gap:8px}
+.stamp-local-note{display:flex;align-items:center;gap:7px;font-size:10px;color:#879c91!important;margin:19px 0 0!important}
+.stamp-local-note svg{flex-shrink:0}
+.stamp-empty-warning{font-size:11px;color:#a36a28!important;background:#fff7e9;border-radius:5px;padding:10px 12px;margin:14px 0 0!important}
+.stamp-loading{animation:spin 1s linear infinite;color:#759b8c}
+@media(max-width:560px){.stamp-checkerboard{height:150px}.stamp-comparison{gap:10px}.stamp-mode-options label{padding:9px 7px;font-size:10px}.stamp-import-modal{padding:20px}.stamp-crop{font-size:10px}.stamp-local-note{font-size:9px}.stamp-mode-description{font-size:10px}}
