@@ -86,7 +86,7 @@ npm run package:win
 npm run package:mac
 ```
 
-出力先は `release/`。MacのIntel / Apple Siliconを両方作成する場合は `npm run build` の後に `npx electron-builder --mac --x64 --arm64`。このMVPはコード署名・公証を設定していません。一般配布にはそれぞれの署名設定と実機検証が必要です。
+出力先は `release/`。MacのIntel / Apple Siliconを両方作成する場合は `npm run build` の後に `npx electron-builder --mac --x64 --arm64 --publish never`。このMVPはコード署名・公証を設定していません。一般配布にはそれぞれの署名設定と実機検証が必要です。
 
 GitHubの`main`へのpushとPull Requestでは、Windows・macOSの両方で単体テスト、本番ビルド、ブラウザー操作テストを実行し、未署名の試用版を作成します。成功した実行のActions画面から、`LumaStudio-PDF-Windows`／`LumaStudio-PDF-macOS`の成果物を取得できます。
 
