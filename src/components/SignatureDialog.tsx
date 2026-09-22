@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { BadgeCheck, FileKey2, FolderOpen, Info, LoaderCircle, LockKeyhole, X } from 'lucide-react';
 import './signature.css';
 
@@ -47,6 +47,9 @@ export function SignatureDialog({ onClose, onSign }: {
     (chooseRef.current ?? dialogRef.current)?.focus();
     return () => { alive.current = false; previous?.focus(); };
   }, []);
+  useLayoutEffect(() => {
+    if (certificate) passwordRef.current?.focus();
+  }, [certificate]);
   const close = () => {
     if (busy) return;
     setPassword(''); setInfo(null); setCertificate(null);
@@ -60,7 +63,6 @@ export function SignatureDialog({ onClose, onSign }: {
       const selected = await desktop.chooseCertificate();
       if (!alive.current) return;
       setCertificate(selected);
-      if (selected) requestAnimationFrame(() => passwordRef.current?.focus());
     } catch {
       if (alive.current) setError('証明書ファイルを開けませんでした。もう一度選択してください。');
     } finally { if (alive.current) setBusy(null); }
