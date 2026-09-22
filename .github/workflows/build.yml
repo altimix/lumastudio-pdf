@@ -21,6 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run release:check
       - run: npm run build
       - name: Install test browser
         run: npx playwright install chromium
@@ -38,14 +39,22 @@ jobs:
       - name: Package unsigned Windows preview
         if: runner.os == 'Windows'
         run: npx electron-builder --win portable --publish never
-      - name: Package unsigned Mac preview
+      - name: Package Mac preview with ad-hoc integrity signature
         if: runner.os == 'macOS'
-        run: npx electron-builder --mac zip --x64 --arm64 --publish never
+        run: npx electron-builder --mac zip --x64 --arm64 --publish never -c.mac.identity=-
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # PR builds need this even for identity '-'. No signing secrets are supplied.
+          CSC_FOR_PULL_REQUEST: 'true'
+      - name: Verify extracted Mac ZIP integrity and included installation guide
+        if: runner.os == 'macOS'
+        run: node scripts/release-mac-check.mjs
+      - name: Verify packaged app starts and renders a PDF
+        run: node scripts/release-smoke.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: LumaStudio-PDF-${{ runner.os }}
           path: |
             release/*.exe
             release/*.zip
+            release/README-Mac.txt

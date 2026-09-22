@@ -1,0 +1,27 @@
+name: 機能追加・改善
+description: 目的と完了条件を決めてから開発する
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 何をできるようにしたいか
+      description: 利用者の操作と期待する結果を書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 完了条件
+      description: 動作・保存結果・Windows/Macでの確認を、チェックできる形で書いてください。
+      placeholder: "- [ ] 対象の操作で期待する結果になる"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 今回含める範囲・含めない範囲
+  - type: textarea
+    id: verification
+    attributes:
+      label: 確認方法
+      description: 個人情報を含まないサンプルでの再現手順を書いてください。

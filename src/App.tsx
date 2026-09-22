@@ -13,6 +13,7 @@ import {
   FolderOpen,
   ImagePlus,
   Info,
+  KeyRound,
   LoaderCircle,
   MousePointer2,
   MoreHorizontal,
@@ -50,6 +51,8 @@ import { prepareAiPage } from "./lib/ai-page";
 import { SignatureDialog } from "./components/SignatureDialog";
 import { MergeDialog, type MergeFile } from "./components/MergeDialog";
 import { ProjectDialog } from "./components/ProjectDialog";
+import { AiSettingsDialog } from "./components/AiSettingsDialog";
+import { CertificateGuide } from "./components/CertificateGuide";
 import { encodeProject, decodeProject } from "./lib/project";
 import {
   PageContextMenu,
@@ -138,6 +141,8 @@ export default function App() {
   const [mergeFiles, setMergeFiles] = useState<MergeFile[]>([]);
   const [mergeError, setMergeError] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [certificateGuideOpen, setCertificateGuideOpen] = useState(false);
   const [projectError, setProjectError] = useState("");
   const projectInput = useRef<HTMLInputElement>(null);
   const [pageMenu, setPageMenu] = useState<PageMenuTarget | null>(null);
@@ -185,6 +190,8 @@ export default function App() {
     signatureOpen,
     mergeOpen,
     projectOpen,
+    aiSettingsOpen,
+    certificateGuideOpen,
   });
   currentRef.current = {
     dirty,
@@ -193,6 +200,8 @@ export default function App() {
     signatureOpen,
     mergeOpen,
     projectOpen,
+    aiSettingsOpen,
+    certificateGuideOpen,
   };
   const notify = (value: string) => {
     setMessage(value);
@@ -338,7 +347,9 @@ export default function App() {
       currentRef.current.busy ||
       currentRef.current.signatureOpen ||
       currentRef.current.mergeOpen ||
-      currentRef.current.projectOpen
+      currentRef.current.projectOpen ||
+      currentRef.current.aiSettingsOpen ||
+      currentRef.current.certificateGuideOpen
     )
       await new Promise((resolve) => setTimeout(resolve, 100));
     if (
@@ -819,7 +830,15 @@ export default function App() {
   };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (signatureOpen || mergeOpen || projectOpen || pageMenu) return;
+      if (
+        signatureOpen ||
+        mergeOpen ||
+        projectOpen ||
+        pageMenu ||
+        aiSettingsOpen ||
+        certificateGuideOpen
+      )
+        return;
       const typing =
         e.target instanceof HTMLElement &&
         !!e.target.closest("input, textarea, select, [contenteditable]");
@@ -1176,6 +1195,22 @@ export default function App() {
             <span className="version">MVP</span>
           </div>
           <div className="header-actions">
+            <button
+              disabled={!!busy}
+              aria-label="証明書ガイド"
+              onClick={() => setCertificateGuideOpen(true)}
+            >
+              <ShieldCheck size={17} />
+              <span>証明書ガイド</span>
+            </button>
+            <button
+              disabled={!!busy}
+              aria-label="AI設定"
+              onClick={() => setAiSettingsOpen(true)}
+            >
+              <KeyRound size={17} />
+              <span>AI設定</span>
+            </button>
             <button
               disabled={!!busy}
               onClick={() => {
@@ -2241,6 +2276,22 @@ export default function App() {
               setMergeError("");
             }
           }}
+        />
+      )}
+      {aiSettingsOpen && (
+        <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} />
+      )}
+      {certificateGuideOpen && (
+        <CertificateGuide
+          onClose={() => setCertificateGuideOpen(false)}
+          onChooseCertificate={
+            pdf && window.lumaDesktop && !signedInput
+              ? () => {
+                  setCertificateGuideOpen(false);
+                  setSignatureOpen(true);
+                }
+              : undefined
+          }
         />
       )}
       {projectOpen && (

@@ -15,8 +15,11 @@
     "desktop:dev": "node scripts/dev.mjs",
     "build": "tsc -b && vite build",
     "desktop": "npm run build && electron .",
-    "test": "vitest run && node --test electron/pdf-files.test.cjs",
+    "test": "vitest run && node --test electron/*.test.cjs scripts/release-check.test.mjs",
     "test:e2e": "playwright test",
+    "release:check": "node --test scripts/release-check.test.mjs",
+    "release:icons": "node scripts/release-icons.mjs",
+    "release:smoke": "node scripts/release-smoke.mjs",
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:dir": "npm run build && electron-builder --dir --publish never"
@@ -31,9 +34,11 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "server/ai.cjs",
-      "server/signature.cjs",
-      "node_modules/pdfjs-dist/**/*"
+      "server/*.cjs",
+      "node_modules/pdfjs-dist/**/*",
+      "!**/*.test.*",
+      "!**/.env*",
+      "!**/*.{p12,pfx,pem,key,lumapdf}"
     ],
     "extraResources": [
       {
@@ -43,6 +48,15 @@
       {
         "from": "scripts/install-macos-pdf-service.sh",
         "to": "install-macos-pdf-service.sh"
+      },
+      {
+        "from": "docs",
+        "to": "docs",
+        "filter": ["**/*.md"]
+      },
+      {
+        "from": "README-Mac.txt",
+        "to": "README-Mac.txt"
       }
     ],
     "fileAssociations": [
@@ -57,18 +71,39 @@
         "nsis",
         "portable"
       ],
-      "signAndEditExecutable": false
+      "icon": "build/icon.ico",
+      "signExecutable": false
     },
     "nsis": {
+      "artifactName": "LumaStudio-PDF-${version}-windows-${arch}-setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
+    "portable": {
+      "artifactName": "LumaStudio-PDF-${version}-windows-${arch}-portable.${ext}"
+    },
     "mac": {
+      "artifactName": "LumaStudio-PDF-${version}-macos-${arch}.${ext}",
+      "icon": "build/icon.icns",
+      "identity": "-",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extraDistFiles": ["README-Mac.txt"],
       "target": [
         "dmg",
         "zip"
       ],
       "category": "public.app-category.productivity"
+    },
+    "dmg": {
+      "backgroundColor": "#f3f6f3",
+      "window": { "width": 540, "height": 430 },
+      "contents": [
+        { "x": 130, "y": 150, "type": "file" },
+        { "x": 410, "y": 150, "type": "link", "path": "/Applications" },
+        { "x": 270, "y": 300, "type": "file", "path": "README-Mac.txt" }
+      ]
     }
   },
   "dependencies": {

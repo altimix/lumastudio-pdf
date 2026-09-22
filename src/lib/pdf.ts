@@ -1,4 +1,4 @@
-import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNull, PDFSignature, PDFString, degrees } from 'pdf-lib'
+import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNull, PDFPageLeaf, PDFRef, PDFSignature, PDFStream, PDFString, degrees } from 'pdf-lib'
 import type { PDFObject } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -274,6 +274,137 @@ function preparePagesForCopy(source: PDFDocument): void {
 }
 
 /**
+ * pdf-lib's copyPages follows Link destinations and annotation /P references as
+ * ordinary objects. This creates orphan page copies, including deleted pages.
+ * Pre-map every retained page before copying so navigation points to the actual
+ * output page tree and omitted pages can never pull their content into a save.
+ */
+async function copySelectedPages(output: PDFDocument, source: PDFDocument, indices: number[]) {
+  await source.flush()
+  const sourcePages = source.getPages()
+  const selected = new Set(indices)
+  const pageIndexes = new Map<PDFObject, number>()
+  sourcePages.forEach((page, index) => { pageIndexes.set(page.ref, index); pageIndexes.set(page.node, index) })
+  const named = new Map<string, PDFObject>()
+  const oldDestinations = source.context.lookup(source.catalog.get(PDFName.of('Dests')))
+  if (oldDestinations instanceof PDFDict) {
+    for (const [name, value] of oldDestinations.entries()) named.set(name.decodeText(), value)
+  }
+  const names = source.context.lookup(source.catalog.get(PDFName.of('Names')))
+  const pending: PDFObject[] = names instanceof PDFDict && names.get(PDFName.of('Dests')) ? [names.get(PDFName.of('Dests'))!] : []
+  const visitedNames = new Set<PDFObject>()
+  while (pending.length) {
+    const node = source.context.lookup(pending.pop()!)
+    if (!(node instanceof PDFDict) || visitedNames.has(node)) continue
+    visitedNames.add(node)
+    const pairs = source.context.lookup(node.get(PDFName.of('Names')))
+    if (pairs instanceof PDFArray) {
+      for (let index = 0; index + 1 < pairs.size(); index += 2) {
+        const key = source.context.lookup(pairs.get(index))
+        if (key instanceof PDFString || key instanceof PDFHexString) named.set(key.decodeText(), pairs.get(index + 1))
+      }
+    }
+    const children = source.context.lookup(node.get(PDFName.of('Kids')))
+    if (children instanceof PDFArray) pending.push(...children.asArray())
+  }
+  const destinationModes = new Set(['XYZ', 'Fit', 'FitH', 'FitV', 'FitR', 'FitB', 'FitBH', 'FitBV'])
+  const destination = (value: PDFObject | undefined, visited = new Set<PDFObject>()): PDFArray | undefined => {
+    const resolved = source.context.lookup(value)
+    if (!resolved || visited.has(resolved)) return
+    visited.add(resolved)
+    if (resolved instanceof PDFName || resolved instanceof PDFString || resolved instanceof PDFHexString) {
+      return destination(named.get(resolved.decodeText()), visited)
+    }
+    if (resolved instanceof PDFDict) return destination(resolved.get(PDFName.of('D')), visited)
+    if (!(resolved instanceof PDFArray) || resolved.size() < 2) return
+    const pageIndex = pageIndexes.get(source.context.lookup(resolved.get(0))!)
+    const mode = source.context.lookup(resolved.get(1))
+    if (pageIndex === undefined || !selected.has(pageIndex) || !(mode instanceof PDFName) || !destinationModes.has(mode.decodeText())) return
+    return resolved
+  }
+  const copied = indices.map((index) => {
+    if (!sourcePages[index]) throw new Error('保存するページが元のPDFにありません。')
+    return output.addPage()
+  })
+  const mapped = new Map<PDFObject, PDFObject>()
+  sourcePages.forEach((page) => { mapped.set(page.ref, PDFNull); mapped.set(page.node, PDFNull) })
+  indices.forEach((index, position) => {
+    // A repeated source page, when supplied by a project, uses its first copy as
+    // the unambiguous destination of original in-document navigation.
+    if (mapped.get(sourcePages[index].ref) === PDFNull) {
+      mapped.set(sourcePages[index].ref, copied[position].ref)
+      mapped.set(sourcePages[index].node, copied[position].ref)
+    }
+  })
+  const invalidGoTo = (value: PDFObject) => {
+    const resolved = source.context.lookup(value)
+    return resolved instanceof PDFDict && resolved.get(PDFName.of('S')) === PDFName.of('GoTo') && !destination(resolved.get(PDFName.of('D')))
+  }
+  const copy = (value: PDFObject): PDFObject => {
+    const prior = mapped.get(value)
+    if (prior) return prior
+    if (invalidGoTo(value)) return PDFNull
+    if (value instanceof PDFRef) {
+      const original = source.context.lookup(value)
+      if (!original) return PDFNull
+      // Do not copy orphan page dictionaries outside the source page tree.
+      if (original instanceof PDFDict && original.get(PDFName.of('Type')) === PDFName.of('Page')) return PDFNull
+      const ref = output.context.nextRef()
+      mapped.set(value, ref)
+      output.context.assign(ref, copy(original))
+      return ref
+    }
+    if (value instanceof PDFDict) {
+      if (value.get(PDFName.of('Type')) === PDFName.of('Page')) return PDFNull
+      const clone = value.clone(output.context)
+      mapped.set(value, clone)
+      copyEntries(value, clone)
+      return clone
+    }
+    if (value instanceof PDFArray) {
+      const clone = value.clone(output.context)
+      mapped.set(value, clone)
+      for (let index = value.size() - 1; index >= 0; index -= 1) {
+        if (invalidGoTo(value.get(index))) clone.remove(index)
+        else clone.set(index, copy(value.get(index)))
+      }
+      return clone
+    }
+    if (value instanceof PDFStream) {
+      const clone = value.clone(output.context)
+      mapped.set(value, clone)
+      copyEntries(value.dict, clone.dict)
+      return clone
+    }
+    return value.clone(output.context)
+  }
+  const copyEntries = (original: PDFDict, target: PDFDict, isPage = false) => {
+    for (const [key, value] of original.entries()) {
+      if (isPage && key === PDFName.of('Parent')) continue
+      if (key === PDFName.of('Dest') || (key === PDFName.of('D') && original.get(PDFName.of('S')) === PDFName.of('GoTo'))) {
+        const resolved = destination(value)
+        if (resolved) target.set(key, copy(resolved))
+        else target.delete(key)
+      } else if (invalidGoTo(value)) target.delete(key)
+      else target.set(key, copy(value))
+    }
+  }
+  indices.forEach((index, position) => {
+    const sourcePage = sourcePages[index].node
+    const target = copied[position].node
+    for (const key of target.keys()) if (key !== PDFName.of('Parent')) target.delete(key)
+    copyEntries(sourcePage, target, true)
+    // Resources, boxes, and rotation can be inherited from the source /Pages.
+    for (const entry of PDFPageLeaf.InheritableEntries) {
+      const key = PDFName.of(entry)
+      const value = sourcePage.getInheritableAttribute(key)
+      if (!sourcePage.has(key) && value) target.set(key, copy(value))
+    }
+  })
+  return copied
+}
+
+/**
  * Append whole sources without applying the editor's page order or annotations.
  * Existing source indexes therefore remain valid, including currently hidden pages.
  * All work happens on newly loaded documents; failure leaves every input untouched.
@@ -330,7 +461,7 @@ export async function appendPdfSources(
   const output = await PDFDocument.create()
   for (const source of loaded) {
     try {
-      for (const page of await output.copyPages(source.document, source.document.getPageIndices())) output.addPage(page)
+      await copySelectedPages(output, source.document, source.document.getPageIndices())
     } catch {
       throw new Error(`「${source.name}」のページを結合できませんでした。元のアプリからPDFとして印刷して開いてください。`)
     }
@@ -354,13 +485,12 @@ export async function exportPdf(originalBytes: Uint8Array, pages: PageInfo[], an
   const source = await PDFDocument.load(originalBytes, { updateMetadata: false })
   preparePagesForCopy(source)
   const output = await PDFDocument.create()
-  const copied = await output.copyPages(source, pages.map((page) => page.sourceIndex))
+  const copied = await copySelectedPages(output, source, pages.map((page) => page.sourceIndex))
   for (let index = 0; index < pages.length; index += 1) {
     const info = pages[index]
     const page = copied[index]
     const transform = info.viewportTransform || fallbackTransform(page)
     const originalRotation = page.getRotation().angle
-    output.addPage(page)
     for (const annotation of annotations.filter((item) => item.pageId === info.id)) {
       const dataUrl = await annotationToDataUrl(annotation)
       const image = /^data:image\/jpe?g[;,]/i.test(dataUrl) ? await output.embedJpg(dataUrl) : await output.embedPng(dataUrl)

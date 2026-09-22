@@ -1,0 +1,116 @@
+name: Release desktop preview
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Verify and package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify tag, package version, and release notes
+        run: node scripts/release-check.mjs version
+      - run: npm ci
+      - run: npm test
+      - run: npm run release:check
+      - run: npm run build
+      - name: Install test browser
+        run: npx playwright install chromium
+      - name: Verify editor workflows
+        run: npm run test:e2e
+      - name: Keep failed browser test evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-browser-tests-${{ matrix.platform }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+      - name: Package Windows installer and portable preview
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win nsis portable --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Package Mac Intel and Apple Silicon preview
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify extracted Mac ZIP integrity and included installation guide
+        if: runner.os == 'macOS'
+        run: node scripts/release-mac-check.mjs
+      - name: Verify packaged app starts and renders a PDF
+        run: node scripts/release-smoke.mjs
+      - name: Verify release asset checksums
+        run: node scripts/release-check.mjs assets ${{ matrix.platform }} release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Release-${{ matrix.platform }}
+          path: |
+            release/LumaStudio-PDF-*.exe
+            release/LumaStudio-PDF-*.dmg
+            release/LumaStudio-PDF-*.zip
+            release/SHA256SUMS-${{ matrix.platform }}.txt
+            release/README-Mac.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish checked preview
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify release metadata again
+        run: node scripts/release-check.mjs version
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify all six packages and their checksums
+        run: node scripts/release-check.mjs assets all release-assets
+      - name: Publish prerelease with installers and SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG"
+          release-assets/LumaStudio-PDF-*.exe
+          release-assets/LumaStudio-PDF-*.dmg
+          release-assets/LumaStudio-PDF-*.zip
+          release-assets/SHA256SUMS.txt
+          release-assets/README-Mac.txt
+          --verify-tag --prerelease
+          --title "LumaStudio PDF $RELEASE_TAG — 試用版"
+          --notes-file "docs/releases/$RELEASE_TAG.md"

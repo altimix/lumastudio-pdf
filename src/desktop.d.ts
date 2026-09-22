@@ -39,6 +39,35 @@ declare global {
         notes: string[];
       }>;
       getAiStatus(): Promise<{ available: boolean; model: string }>;
+      getAiSettings(): Promise<{
+        available: boolean;
+        model: string;
+        source: "saved" | "environment" | "none";
+        saved: boolean;
+        hasStoredSettings: boolean;
+        canStore: boolean;
+        warning: string;
+      }>;
+      saveAiSettings(input: {
+        key: string;
+        model: string;
+      }): Promise<{
+        available: boolean;
+        model: string;
+        source: "saved" | "environment" | "none";
+        saved: boolean;
+        hasStoredSettings: boolean;
+        warning: string;
+      }>;
+      removeAiSettings(): Promise<{
+        available: boolean;
+        model: string;
+        source: "saved" | "environment" | "none";
+        saved: boolean;
+        hasStoredSettings: boolean;
+        warning: string;
+      }>;
+      openHelpLink(id: string): Promise<void>;
       chooseCertificate(): Promise<{ name: string } | null>;
       inspectCertificate(password: string): Promise<{
         subject: string;

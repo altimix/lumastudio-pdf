@@ -19,3 +19,4 @@ tmp/
 public/pdfjs/
 .DS_Store
 /NUL
+ai-settings.json
