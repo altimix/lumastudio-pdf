@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell, session, safeStorage } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -13,6 +13,7 @@ let inboxWatcher;
 let rendererReady = false;
 let receiving = false;
 let aiService;
+let aiSettings;
 let selectedCertificate;
 const pendingPdfs = [];
 const pendingPaths = [];
@@ -205,6 +206,15 @@ function printPdf(bytes) {
 }
 
 function registerIpc() {
+  ipcMain.handle('luma:open-help-link', async(event, id) => {
+    assertMainSender(event);
+    const url = require('./help-links.cjs').getHelpUrl(id);
+    if (!url) throw new Error('この案内リンクは開けません。');
+    await shell.openExternal(url);
+  });
+  ipcMain.handle('luma:ai-settings', async(event) => {assertMainSender(event);return aiSettings.getSettings();});
+  ipcMain.handle('luma:save-ai-settings', async(event, input) => {assertMainSender(event);return aiSettings.save(input);});
+  ipcMain.handle('luma:remove-ai-settings', async(event) => {assertMainSender(event);return aiSettings.remove();});
   ipcMain.handle('luma:open-project', async (event) => {
     assertMainSender(event);
     const result = await dialog.showOpenDialog(mainWindow, {title:'作業データを開く',filters:[{name:'LumaStudio PDF 作業データ',extensions:['lumapdf']}],properties:['openFile']});
@@ -359,9 +369,10 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_event, argv, workingDirectory) => { acceptArguments(argv, workingDirectory); focusMain(); });
   app.whenReady().then(async () => {
     const { createAutofill } = require('../server/ai.cjs');
-    aiService = createAutofill({ envPath: process.env.LUMA_ENV_PATH || (app.isPackaged
+    aiSettings = await require('../server/settings.cjs').createAiSettings({ directory:app.getPath('userData'),safeStorage,createAutofill,envPath: process.env.LUMA_ENV_PATH || (app.isPackaged
       ? path.join(app.getPath('userData'), '.env')
       : path.join(__dirname, '..', '.env')) });
+    aiService = aiSettings;
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     printInbox = path.join(app.getPath('documents'), 'LumaStudio PDF', 'Print Inbox');

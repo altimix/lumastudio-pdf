@@ -1,0 +1,26 @@
+name: 不具合
+description: 再現手順と期待する結果を記録する
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 起きていること
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: APIキー、個人のPDF、印鑑画像、証明書は添付しないでください。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する結果・完了条件
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OSとアプリのバージョン

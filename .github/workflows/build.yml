@@ -21,6 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run release:check
       - run: npm run build
       - name: Install test browser
         run: npx playwright install chromium
@@ -43,6 +44,8 @@ jobs:
         run: npx electron-builder --mac zip --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify packaged app starts and renders a PDF
+        run: node scripts/release-smoke.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: LumaStudio-PDF-${{ runner.os }}
