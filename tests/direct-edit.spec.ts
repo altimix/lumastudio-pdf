@@ -97,7 +97,18 @@ test('用紙に黒い日本語を直接入力し、IME・キャンセル・履�
   await expect(initial).toBeVisible();
   await initial.dblclick();
   await input.fill('取り消す入力');
-  await input.press('Escape');
+  await input.press('Tab');
+  await expect(page.getByRole('button', { name: '文字入力を確定', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(input).not.toBeVisible();
+  await expect(initial).toBeVisible();
+  await initial.dblclick();
+  await input.fill('キャンセルボタンから取り消す入力');
+  await input.press('Tab');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: '文字入力をキャンセル', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(input).not.toBeVisible();
   await expect(initial).toBeVisible();
   await initial.dblclick();
   await input.fill('山田 花子\n東京都架空市');
@@ -355,6 +366,11 @@ test('印鑑と画像は縦横比を保って拡大でき、回転した用紙�
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: '画像', exact: true }).click();
   await (await chooser).setFiles({ name: 'wide-test-image.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') });
+  // File selection returns before FileReader and image.decode finish. Wait for
+  // the ready preview before clicking a placement point, including on fast CI.
+  const preview = page.getByRole('img', { name: '配置する画像', exact: true });
+  await expect(preview).toHaveAttribute('src', png);
+  await expect.poll(() => preview.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(120);
   await placeAt(page, 80, 340, 90);
   const image = page.locator('.annotation').filter({ has: page.locator('img') }).last();
   await expect(page.locator('.annotation')).toHaveCount(2);

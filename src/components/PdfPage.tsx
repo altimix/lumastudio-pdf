@@ -624,6 +624,26 @@ export function PdfPage({
             }}
             onPointerDown={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (
+                composing.current ||
+                event.nativeEvent.isComposing ||
+                event.keyCode === 229
+              )
+                return;
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                cancelDraft();
+              } else if (
+                event.key === "Enter" &&
+                (event.ctrlKey || event.metaKey)
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                commitDraft();
+              }
+            }}
             onBlur={(event) => {
               if (
                 !event.currentTarget.contains(
@@ -664,26 +684,6 @@ export function PdfPage({
               }}
               onCompositionEnd={() => {
                 composing.current = false;
-              }}
-              onKeyDown={(event) => {
-                if (
-                  composing.current ||
-                  event.nativeEvent.isComposing ||
-                  event.keyCode === 229
-                )
-                  return;
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  cancelDraft();
-                } else if (
-                  event.key === "Enter" &&
-                  (event.ctrlKey || event.metaKey)
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  commitDraft();
-                }
               }}
             />
             <div
