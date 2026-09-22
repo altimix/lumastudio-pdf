@@ -210,11 +210,12 @@ export function NumericField(props: NumericFieldProps) {
           return;
         if (scrub.current) endScrub(false);
         suppressClick.current = false;
+        const startValue = normalize(parseDraft(draftRef.current) ?? props.value, props);
         scrub.current = {
           pointerId: event.pointerId,
           startX: event.clientX,
-          startValue: props.value,
-          previewValue: props.value,
+          startValue,
+          previewValue: startValue,
           active: false,
         };
       }}

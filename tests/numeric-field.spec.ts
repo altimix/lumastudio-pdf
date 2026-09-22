@@ -124,6 +124,11 @@ test('横ドラッグのShift・Alt調整とキーボード増減に対応し、
   await beginScrub(page, size, 40, 'Alt');
   await page.mouse.up();
   await expect(size).toHaveValue('41');
+  // A scrub continues from the number currently typed, not the older saved value.
+  await size.fill('25');
+  await beginScrub(page, size, 8);
+  await page.mouse.up();
+  await expect(size).toHaveValue('27');
 });
 
 test('数値の入力途中に保存すると現在の値が反映される', async ({ page }, testInfo) => {

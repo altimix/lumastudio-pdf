@@ -3,3 +3,4 @@
 *.yml text eol=lf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+public/font-licenses/*.txt text eol=lf
