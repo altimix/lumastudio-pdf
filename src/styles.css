@@ -1503,3 +1503,28 @@ input[type="color"] {
 .pages-help {
   line-height: 1.7;
 }
+.workspace {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+.workspace.panning .pdf-surface,
+.workspace.panning .annotation {
+  cursor: grab;
+}
+.workspace.panning:active .pdf-surface,
+.workspace.panning:active .annotation {
+  cursor: grabbing;
+}
+.zoom-controls {
+  flex-wrap: wrap;
+}
+.zoom-controls .fit-button {
+  min-height: 32px;
+}
+@media (pointer: coarse) {
+  .zoom-controls button,
+  .tool-group button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

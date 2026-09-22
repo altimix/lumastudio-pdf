@@ -1,0 +1,167 @@
+.pdf-surface.readonly .annotation {
+  cursor: default;
+}
+.pdf-surface.panning,
+.pdf-surface.panning .annotation {
+  cursor: grab;
+}
+.pdf-surface.panning:active,
+.pdf-surface.panning .annotation:active {
+  cursor: grabbing;
+}
+.annotation.editing {
+  visibility: hidden;
+}
+.annotation-resize-handle {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  touch-action: none;
+}
+.annotation-resize-handle.nw {
+  left: -14px;
+  top: -14px;
+}
+.annotation-resize-handle.ne {
+  right: -14px;
+  top: -14px;
+}
+.annotation-resize-handle.sw {
+  left: -14px;
+  bottom: -14px;
+}
+.annotation-resize-handle.se {
+  right: -14px;
+  bottom: -14px;
+}
+.annotation-resize-handle > span {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid #257b6b;
+  border-radius: 2px;
+  background: white;
+  box-shadow: 0 1px 3px #193e3b33;
+  pointer-events: none;
+}
+.annotation-resize-handle:hover > span,
+.annotation-resize-handle:focus-visible > span {
+  background: #d3eee6;
+}
+.annotation-resize-handle:focus-visible {
+  outline: 2px solid #257b6b;
+  outline-offset: -3px;
+}
+.inline-text-editor {
+  position: absolute;
+  z-index: 10;
+  outline: 2px solid #257b6b;
+  background: #ffffffeb;
+  box-shadow: 0 0 0 4px #257b6b16;
+  cursor: text;
+}
+.inline-text-editor textarea {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+  box-sizing: border-box;
+  background: transparent;
+  font-weight: 400;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: pre-wrap;
+  outline: none;
+  touch-action: auto;
+}
+.inline-text-editor textarea::placeholder {
+  color: #7f9390;
+}
+.inline-text-actions {
+  position: absolute;
+  left: -2px;
+  top: calc(100% + 8px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  max-width: min(420px, 86vw);
+  padding: 5px;
+  border: 1px solid #d6e5df;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 3px 12px #143b3024;
+  color: #59706b;
+  cursor: default;
+}
+.inline-text-actions button {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid #d7e4de;
+  border-radius: 4px;
+  background: #fff;
+  color: #335c51;
+  font-size: 12px;
+}
+.inline-text-actions button:first-child {
+  border-color: #257b6b;
+  background: #257b6b;
+  color: #fff;
+}
+.inline-text-actions button:focus-visible {
+  outline: 2px solid #257b6b;
+  outline-offset: 2px;
+}
+.inline-text-actions span {
+  padding: 0 5px;
+  font-size: 10px;
+}
+@media (pointer: coarse) {
+  .annotation-resize-handle {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+  .annotation-resize-handle.nw {
+    left: -22px;
+    top: -22px;
+  }
+  .annotation-resize-handle.ne {
+    right: -22px;
+    top: -22px;
+  }
+  .annotation-resize-handle.sw {
+    left: -22px;
+    bottom: -22px;
+  }
+  .annotation-resize-handle.se {
+    right: -22px;
+    bottom: -22px;
+  }
+  .annotation-resize-handle > span {
+    width: 10px;
+    height: 10px;
+  }
+  .inline-text-actions button {
+    min-height: 44px;
+  }
+}
+@media (max-width: 640px) {
+  .inline-text-actions span {
+    display: none;
+  }
+}

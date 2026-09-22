@@ -146,7 +146,7 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
   if (!(width > 0 && height > 0)) throw new Error('追加する要素のサイズが不正です。')
   if (document.fonts) await document.fonts.ready
   const { canvas, context } = makeCanvas(width, height)
-  const color = annotation.color || (annotation.type === 'stamp' ? '#b82e2b' : '#202c2a')
+  const color = annotation.color || (annotation.type === 'stamp' ? '#b82e2b' : '#000000')
   context.fillStyle = color
   context.strokeStyle = color
   if (annotation.type === 'stamp') {

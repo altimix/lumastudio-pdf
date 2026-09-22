@@ -1,7 +1,7 @@
 {
   "name": "lumastudio-pdf",
   "productName": "LumaStudio PDF",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PDFに記入して、印鑑を押して、すぐに返送。Windows・macOS向けPDF編集アプリ。",
   "private": true,
   "type": "module",
@@ -52,7 +52,9 @@
       {
         "from": "docs",
         "to": "docs",
-        "filter": ["**/*.md"]
+        "filter": [
+          "**/*.md"
+        ]
       },
       {
         "from": "README-Mac.txt",
@@ -89,7 +91,9 @@
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "extraDistFiles": ["README-Mac.txt"],
+      "extraDistFiles": [
+        "README-Mac.txt"
+      ],
       "target": [
         "dmg",
         "zip"
@@ -98,11 +102,28 @@
     },
     "dmg": {
       "backgroundColor": "#f3f6f3",
-      "window": { "width": 540, "height": 430 },
+      "window": {
+        "width": 540,
+        "height": 430
+      },
       "contents": [
-        { "x": 130, "y": 150, "type": "file" },
-        { "x": 410, "y": 150, "type": "link", "path": "/Applications" },
-        { "x": 270, "y": 300, "type": "file", "path": "README-Mac.txt" }
+        {
+          "x": 130,
+          "y": 150,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 270,
+          "y": 300,
+          "type": "file",
+          "path": "README-Mac.txt"
+        }
       ]
     }
   },

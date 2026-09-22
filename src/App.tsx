@@ -11,6 +11,7 @@ import {
   FilePlus2,
   FileText,
   FolderOpen,
+  Hand,
   ImagePlus,
   Info,
   KeyRound,
@@ -44,7 +45,13 @@ import {
   renderPdfPage,
 } from "./lib/pdf";
 import type { Annotation, PageInfo, Tool } from "./lib/types";
-import { AnnotationVisual, PdfPage, Thumbnail } from "./components/PdfPage";
+import {
+  AnnotationVisual,
+  PdfPage,
+  Thumbnail,
+  type PdfPageHandle,
+} from "./components/PdfPage";
+import { usePdfViewport } from "./hooks/usePdfViewport";
 import { ProfileDialog, type Profile } from "./components/ProfileDialog";
 import { StampImportDialog } from "./components/StampImportDialog";
 import { prepareAiPage } from "./lib/ai-page";
@@ -126,7 +133,12 @@ export default function App() {
   const [scale, setScale] = useState(0.85);
   const [text, setText] = useState("");
   const [fontSize, setFontSize] = useState(13);
-  const [color, setColor] = useState("#25383c");
+  const [color, setColor] = useState("#000000");
+  const [textDraft, setTextDraft] = useState<Annotation | null>(null);
+  const [textEditing, setTextEditing] = useState(false);
+  const pageEditorRef = useRef<PdfPageHandle>(null);
+  const editsRef = useRef(edits);
+  editsRef.current = edits;
   const [stamp, setStamp] = useState<SavedStamp>(() =>
     readSaved("luma.stamp.v1", { name: "", shape: "circle" }),
   );
@@ -178,11 +190,18 @@ export default function App() {
   const stampInput = useRef<HTMLInputElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const stateKey = JSON.stringify(edits);
-  const dirty = !!pdf && stateKey !== savedState;
+  const dirty = !!pdf && (stateKey !== savedState || textEditing);
   const page =
     edits.pages.find((item) => item.id === activeId) ?? edits.pages[0];
   const pageIndex = page ? edits.pages.indexOf(page) : -1;
   const selected = edits.annotations.find((item) => item.id === selectedId);
+  const viewport = usePdfViewport({
+    workspaceRef,
+    scale,
+    setScale,
+    pageKey: page ? `${page.id}:${page.rotation}` : "",
+    handTool: tool === "hand",
+  });
   const currentRef = useRef({
     dirty,
     busy,
@@ -208,17 +227,43 @@ export default function App() {
     setError("");
   };
   const recordEdit = (next: EditState) => {
-    if (JSON.stringify(next) === JSON.stringify(edits)) return;
+    if (JSON.stringify(next) === JSON.stringify(editsRef.current)) return;
     history.current = [
       ...history.current.slice(0, cursor.current + 1),
       next,
     ].slice(-80);
     cursor.current = history.current.length - 1;
+    editsRef.current = next;
     setEdits(next);
   };
   const commit = (next: EditState) => {
     if (currentRef.current.busy || signedInput) return;
     recordEdit(next);
+  };
+  const applyText = (annotation: Annotation) => {
+    const current = editsRef.current;
+    if (
+      !current.pages.some((p) => p.id === annotation.pageId) ||
+      signedInput ||
+      busy
+    )
+      return current;
+    const exists = current.annotations.some((a) => a.id === annotation.id);
+    const next = {
+      ...current,
+      annotations: exists
+        ? current.annotations.map((a) =>
+            a.id === annotation.id ? annotation : a,
+          )
+        : [...current.annotations, annotation],
+    };
+    commit(next);
+    setSelectedId(annotation.id);
+    return next;
+  };
+  const flushInlineText = () => {
+    const draft = pageEditorRef.current?.flushText();
+    return draft ? applyText(draft) : editsRef.current;
   };
   const undo = () => {
     if (currentRef.current.busy || signedInput) return;
@@ -462,6 +507,7 @@ export default function App() {
   };
   const readMergeFiles = async (files: File[]) => {
     if (busy || signedInput || !files.length) return;
+    flushInlineText();
     setMergeOpen(true);
     setMergeError("");
     setBusy("結合するPDFを読み込んでいます");
@@ -487,6 +533,7 @@ export default function App() {
   };
   const chooseMergeFiles = async () => {
     if (busy || signedInput) return;
+    flushInlineText();
     setMergeOpen(true);
     setMergeError("");
     closePageMenu();
@@ -513,6 +560,7 @@ export default function App() {
   };
   const mergeDocuments = async () => {
     if (busy || signedInput || !mergeFiles.length) return;
+    const current = flushInlineText();
     setBusy("PDFを結合しています");
     setMergeError("");
     try {
@@ -522,8 +570,8 @@ export default function App() {
         .slice(result.originalPageCount)
         .map((p, i) => ({ ...p, ...result.addedPages[i] }));
       const next: EditState = {
-        pages: [...edits.pages, ...additions],
-        annotations: edits.annotations,
+        pages: [...current.pages, ...additions],
+        annotations: current.annotations,
       };
       const previous = pdf;
       original.current = result.bytes;
@@ -569,13 +617,14 @@ export default function App() {
 
   const save = async () => {
     if (!original.current || busy || signedInput) return;
+    const current = flushInlineText();
     setBusy("PDFを書き出しています");
     setError("");
     try {
       const data = await exportPdf(
         original.current,
-        edits.pages,
-        edits.annotations,
+        current.pages,
+        current.annotations,
       );
       const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
       if (window.lumaDesktop) {
@@ -591,7 +640,7 @@ export default function App() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
-      setSavedState(stateKey);
+      setSavedState(JSON.stringify(current));
       notify("記入済みPDFを書き出しました。メールに添付して返送できます。");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存できませんでした。");
@@ -601,14 +650,15 @@ export default function App() {
   };
   const saveProject = async () => {
     if (!original.current || busy || signedInput) return;
+    const current = flushInlineText();
     setBusy("作業データを保存しています");
     setProjectError("");
     try {
       const bytes = encodeProject({
         filename,
         original: original.current,
-        pages: edits.pages,
-        annotations: edits.annotations,
+        pages: current.pages,
+        annotations: current.annotations,
       });
       const name = filename.replace(/\.pdf$/i, "") + ".lumapdf";
       if (window.lumaDesktop) {
@@ -624,7 +674,7 @@ export default function App() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
-      setSavedState(stateKey);
+      setSavedState(JSON.stringify(current));
       setProjectOpen(false);
       notify("編集を再開できる作業データを保存しました。");
     } catch (e) {
@@ -729,13 +779,14 @@ export default function App() {
     location: string;
   }) => {
     if (!original.current || !window.lumaDesktop || busy || signedInput) return;
+    const current = flushInlineText();
     setBusy("証明書で署名して保存しています");
     setError("");
     try {
       const bytes = await exportPdf(
         original.current,
-        edits.pages,
-        edits.annotations,
+        current.pages,
+        current.annotations,
       );
       const saved = await window.lumaDesktop.signAndSavePdf(
         Array.from(bytes),
@@ -743,7 +794,7 @@ export default function App() {
         options,
       );
       if (!saved) throw new Error("保存をキャンセルしました。");
-      setSavedState(stateKey);
+      setSavedState(JSON.stringify(current));
       setSignatureOpen(false);
       notify(
         "電子署名済みPDFを保存しました。開いている画面は署名前の作業用原稿です。",
@@ -755,15 +806,16 @@ export default function App() {
   const exportOnePage = async (id: string) => {
     closePageMenu();
     if (!original.current || busy || signedInput) return;
-    const index = edits.pages.findIndex((p) => p.id === id);
+    const current = flushInlineText();
+    const index = current.pages.findIndex((p) => p.id === id);
     if (index < 0) return;
     setBusy("選んだページを書き出しています");
     setError("");
     try {
       const bytes = await exportPdf(
         original.current,
-        [edits.pages[index]],
-        edits.annotations.filter((a) => a.pageId === id),
+        [current.pages[index]],
+        current.annotations.filter((a) => a.pageId === id),
       );
       const name = filename.replace(/\.pdf$/i, "") + `_${index + 1}ページ.pdf`;
       if (window.lumaDesktop) {
@@ -792,12 +844,13 @@ export default function App() {
   };
   const print = async () => {
     if (!original.current || busy) return;
+    const current = flushInlineText();
     setBusy("印刷を準備しています");
     setError("");
     try {
       const data = signedInput
         ? original.current
-        : await exportPdf(original.current, edits.pages, edits.annotations);
+        : await exportPdf(original.current, current.pages, current.annotations);
       if (window.lumaDesktop)
         await window.lumaDesktop.printPdf(Array.from(data));
       else {
@@ -830,7 +883,12 @@ export default function App() {
   };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
       if (
+        profileOpen ||
+        printHelp ||
+        aiOpen ||
+        stampFile ||
         signatureOpen ||
         mergeOpen ||
         projectOpen ||
@@ -841,13 +899,44 @@ export default function App() {
         return;
       const typing =
         e.target instanceof HTMLElement &&
-        !!e.target.closest("input, textarea, select, [contenteditable]");
+        !!e.target.closest(
+          "input, textarea, select, [contenteditable], .inline-text-editor",
+        );
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         void save();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") {
         e.preventDefault();
         void print();
+      } else if (
+        !typing &&
+        !busy &&
+        !signedInput &&
+        selected &&
+        page &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key) &&
+        (!(e.target instanceof HTMLElement) ||
+          !e.target.closest("button, [role=button]:not(.annotation)"))
+      ) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        // Keys follow the visible page even when the original coordinates are rotated.
+        const dx =
+          e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+        const dy =
+          e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
+        const radians = (page.rotation * Math.PI) / 180;
+        updateSelected({
+          x:
+            selected.x +
+            Math.round(dx * Math.cos(radians) + dy * Math.sin(radians)),
+          y:
+            selected.y +
+            Math.round(-dx * Math.sin(radians) + dy * Math.cos(radians)),
+        });
       } else if (
         !typing &&
         !busy &&
@@ -864,7 +953,7 @@ export default function App() {
       ) {
         e.preventDefault();
         removeSelected();
-      } else if (e.key === "Escape") {
+      } else if (!typing && e.key === "Escape") {
         setSelectedId(null);
         setTool("select");
         setProfileOpen(false);
@@ -877,11 +966,8 @@ export default function App() {
   });
 
   const place = (x: number, y: number) => {
-    if (!page || tool === "select" || busy) return;
-    if (tool === "text" && !text.trim()) {
-      setError("右側の「記入する文字」を入力してください。");
+    if (!page || tool === "select" || tool === "hand" || busy || signedInput)
       return;
-    }
     if (tool === "stamp" && !stamp.name.trim() && !stamp.dataUrl) {
       setError("印鑑に入れる名前を入力してください。");
       return;
@@ -891,23 +977,25 @@ export default function App() {
       return;
     }
     let width =
-      tool === "text"
-        ? Math.min(
-            260,
-            Math.max(
-              80,
-              text
-                .split("\n")
-                .reduce((n, line) => Math.max(n, line.length), 0) *
-                fontSize +
-                8,
-            ),
-          )
-        : tool === "image"
-          ? imageData!.width
-          : tool === "check"
-            ? 22
-            : stampSize;
+      tool === "text" && !text.trim()
+        ? Math.min(240, page.width)
+        : tool === "text"
+          ? Math.min(
+              260,
+              Math.max(
+                80,
+                text
+                  .split("\n")
+                  .reduce((n, line) => Math.max(n, line.length), 0) *
+                  fontSize +
+                  8,
+              ),
+            )
+          : tool === "image"
+            ? imageData!.width
+            : tool === "check"
+              ? 22
+              : stampSize;
     let height =
       tool === "text"
         ? Math.max(25, text.split("\n").length * fontSize * 1.45 + 6)
@@ -943,12 +1031,18 @@ export default function App() {
             ? imageData?.dataUrl
             : undefined,
     };
-    commit({ ...edits, annotations: [...edits.annotations, annotation] });
+    if (tool === "text" && !text.trim()) setTextDraft(annotation);
+    else
+      commit({
+        ...editsRef.current,
+        annotations: [...editsRef.current.annotations, annotation],
+      });
     setSelectedId(annotation.id);
     setTool("select");
     setError("");
   };
   const chooseTool = (value: Tool) => {
+    flushInlineText();
     setTool(value);
     setSelectedId(null);
     if (value === "image" && !imageData) imageInput.current?.click();
@@ -993,18 +1087,15 @@ export default function App() {
       setError("画像を読み込めませんでした。別の画像をお試しください。");
     }
   };
-  const fit = () => {
-    if (page && workspaceRef.current)
-      setScale(
-        Math.min(
-          1.4,
-          Math.max(
-            0.2,
-            (workspaceRef.current.clientWidth - 90) /
-              (page.rotation % 180 ? page.height : page.width),
-          ),
-        ),
-      );
+  const fit = (wholePage = false) => {
+    if (!page || !workspaceRef.current) return;
+    const widthScale =
+      (workspaceRef.current.clientWidth - 90) /
+      (page.rotation % 180 ? page.height : page.width);
+    const heightScale =
+      (workspaceRef.current.clientHeight - 120) /
+      (page.rotation % 180 ? page.width : page.height);
+    viewport.zoomTo(wholePage ? Math.min(widthScale, heightScale) : widthScale);
   };
   const renderError = useCallback((value: string) => setError(value), []);
   const registerStamp = (value: SavedStamp) => {
@@ -1129,7 +1220,7 @@ export default function App() {
             (p.width - 4) / Math.max(1, p.text.length),
           ),
         ),
-        color: p.type === "stamp" ? "#bb373c" : "#25383c",
+        color: p.type === "stamp" ? "#bb373c" : "#000000",
         stampShape: stamp.shape,
         dataUrl: p.type === "stamp" ? stamp.dataUrl : undefined,
       }));
@@ -1144,6 +1235,7 @@ export default function App() {
 
   const toolItems: { id: Tool; label: string; icon: typeof Type }[] = [
     { id: "select", label: "選択・移動", icon: MousePointer2 },
+    { id: "hand", label: "手のひら・スクロール", icon: Hand },
     { id: "text", label: "文字を記入", icon: Type },
     { id: "stamp", label: "印鑑", icon: Stamp },
     { id: "check", label: "チェック", icon: CheckCheck },
@@ -1283,7 +1375,11 @@ export default function App() {
                 key={item.id}
                 className={tool === item.id && !selected ? "active" : ""}
                 onClick={() => chooseTool(item.id)}
-                disabled={!pdf || !!busy || signedInput}
+                disabled={
+                  !pdf ||
+                  !!busy ||
+                  (signedInput && item.id !== "hand" && item.id !== "select")
+                }
               >
                 <item.icon size={18} />
                 <span>{item.label}</span>
@@ -1488,7 +1584,11 @@ export default function App() {
               </div>
             </aside>
           )}
-          <main className="workspace" ref={workspaceRef}>
+          <main
+            className={`workspace ${viewport.panning || tool === "hand" ? "panning" : ""}`}
+            ref={workspaceRef}
+            {...viewport.viewportHandlers}
+          >
             {!pdf ? (
               <div className="welcome">
                 <div className="welcome-paper">
@@ -1537,12 +1637,18 @@ export default function App() {
                     {pageIndex + 1} / {edits.pages.length} ページ
                   </span>
                   <span>
-                    {tool === "select"
-                      ? "追加した文字や印鑑をクリックして編集"
-                      : "用紙の置きたい場所をクリック"}
+                    {tool === "hand"
+                      ? "ドラッグで移動・2本指で拡大縮小"
+                      : tool === "select"
+                        ? "文字はダブルクリックで編集・四隅をドラッグでサイズ変更"
+                        : tool === "text" && !text.trim()
+                          ? "記入欄をクリックして、その場で入力"
+                          : "用紙の置きたい場所をクリック"}
                   </span>
                 </div>
                 <PdfPage
+                  key={page.id}
+                  ref={pageEditorRef}
                   document={pdf}
                   page={page}
                   scale={scale}
@@ -1550,7 +1656,22 @@ export default function App() {
                     (a) => a.pageId === page.id,
                   )}
                   selectedId={selectedId}
-                  placing={tool !== "select"}
+                  placing={tool !== "select" && tool !== "hand"}
+                  readOnly={signedInput || !!busy}
+                  panning={viewport.panning || tool === "hand"}
+                  isGesturePointer={viewport.isGesturePointer}
+                  textDraft={textDraft}
+                  onTextDraftConsumed={() => setTextDraft(null)}
+                  onTextEditingChange={setTextEditing}
+                  onCommitText={applyText}
+                  onResize={(id, patch) =>
+                    commit({
+                      ...editsRef.current,
+                      annotations: editsRef.current.annotations.map((a) =>
+                        a.id === id ? { ...a, ...patch } : a,
+                      ),
+                    })
+                  }
                   onPlace={place}
                   onSelect={(id) => {
                     setSelectedId(id);
@@ -1558,8 +1679,8 @@ export default function App() {
                   }}
                   onMove={(id, x, y) =>
                     commit({
-                      ...edits,
-                      annotations: edits.annotations.map((a) =>
+                      ...editsRef.current,
+                      annotations: editsRef.current.annotations.map((a) =>
                         a.id === id ? { ...a, x, y } : a,
                       ),
                     })
@@ -1629,7 +1750,8 @@ export default function App() {
                         type="number"
                         min={6}
                         max={96}
-                        value={selected.fontSize}
+                        step={0.1}
+                        value={Math.round((selected.fontSize ?? 13) * 100) / 100}
                         onChange={(e) =>
                           updateSelected({
                             fontSize: Math.max(
@@ -1687,7 +1809,7 @@ export default function App() {
                     </label>
                   )}
                   <p className="help-text">
-                    用紙の上でドラッグすると移動できます。長い文字は幅・高さを調整してください。
+                    四隅をドラッグしてサイズ変更。矢印キーで微調整、Shift＋矢印で大きく移動。文字はダブルクリックで直接編集できます。
                   </p>
                   <button
                     className="secondary full"
@@ -1767,7 +1889,7 @@ export default function App() {
                     今日の日付を入力
                   </button>
                   <p className="help-text">
-                    入力したら、用紙の記入欄をクリック。
+                    用紙をクリックすると、その場で入力できます。ここで先に入力してから配置することもできます。
                   </p>
                   <div className="section-divider" />
                   <h3>登録情報から入力</h3>
@@ -2128,24 +2250,31 @@ export default function App() {
             <button
               aria-label="縮小"
               disabled={!pdf}
-              onClick={() =>
-                setScale((s) =>
-                  Math.max(0.2, Math.round((s - 0.1) * 100) / 100),
-                )
-              }
+              onClick={() => viewport.zoomBy(-0.1)}
             >
               <ZoomOut size={16} />
             </button>
-            <span>{Math.round(scale * 100)}%</span>
+            <span data-testid="zoom-level">{Math.round(scale * 100)}%</span>
             <button
               aria-label="拡大"
               disabled={!pdf}
-              onClick={() => setScale((s) => Math.min(2, s + 0.1))}
+              onClick={() => viewport.zoomBy(0.1)}
             >
               <ZoomIn size={16} />
             </button>
-            <button className="fit-button" onClick={fit} disabled={!pdf}>
+            <button
+              className="fit-button"
+              onClick={() => fit()}
+              disabled={!pdf}
+            >
               幅に合わせる
+            </button>
+            <button
+              className="fit-button"
+              onClick={() => fit(true)}
+              disabled={!pdf}
+            >
+              ページ全体に合わせる
             </button>
           </div>
         </footer>
