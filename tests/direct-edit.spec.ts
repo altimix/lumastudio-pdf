@@ -8,9 +8,11 @@ interface SavedAnnotation {
 }
 interface SavedProject { annotations: SavedAnnotation[]; pages: { rotation: number }[] }
 
-async function openFixture(page: Page, signed = false) {
+async function openFixture(page: Page, signed = false, pageCount = 1) {
   const pdf = await PDFDocument.create();
-  pdf.addPage([500, 700]).drawText('DIRECT EDIT TEST', { x: 30, y: 660, size: 16 });
+  for (let index = 0; index < pageCount; index++) {
+    pdf.addPage([500, 700]).drawText('DIRECT EDIT TEST', { x: 30, y: 660, size: 16 });
+  }
   if (signed) {
     const value = pdf.context.register(pdf.context.obj({ Type: 'Sig', Filter: 'Adobe.PPKLite', ByteRange: [0, 100, 200, 30], Contents: PDFHexString.of('010203') }));
     const field = pdf.context.register(pdf.context.obj({ FT: 'Sig', T: PDFString.of('TestSignature'), V: value }));
@@ -346,6 +348,91 @@ test('文字入力中に複数PDFをドロップしても、結合の取消・�
   const saved = await saveProject(page, testInfo);
   expect(saved.data.annotations).toHaveLength(1);
   expect(saved.data.annotations[0].text).toBe('結合しても残る文字\n変更後の内容');
+});
+
+test('入力中に別ページを右クリックしても文字が残り、削除・並べ替えとUndoでも保持する', async ({ page }, testInfo) => {
+  await openFixture(page, false, 2);
+  await expect(page.locator('.thumbnail-button')).toHaveCount(2);
+  const firstId = await page.getByRole('button', { name: '1ページ目', exact: true }).getAttribute('data-page-id');
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await placeAt(page, 70, 150);
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await input.fill('ページを切り替えても保持\n入力途中の文字');
+  const contextMenu = page.getByRole('menu', { name: 'ページの操作', exact: true });
+  const openOtherPageMenu = async () => {
+    await expect(input).toBeFocused();
+    const target = page.getByRole('button', { name: '2ページ目', exact: true });
+    const box = (await target.boundingBox())!;
+    // A contextmenu event can switch pages without first blurring the editor.
+    // Exercise that path directly instead of depending on OS right-click focus.
+    await target.evaluate((element, point) => element.dispatchEvent(new MouseEvent('contextmenu', {
+      button: 2, bubbles: true, cancelable: true, clientX: point.x, clientY: point.y,
+    })), { x: box.x + 20, y: box.y + 20 });
+    await expect(contextMenu).toBeVisible();
+  };
+  await openOtherPageMenu();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '1ページ目', exact: true }).click();
+  const initial = page.getByRole('button', { name: '文字: ページを切り替えても保持 入力途中の文字', exact: true });
+  await expect(initial).toBeVisible();
+  await initial.dblclick();
+  await input.fill('ページ削除の前に変更\n最新の文字');
+  await openOtherPageMenu();
+  await contextMenu.getByRole('menuitem', { name: 'このページを削除', exact: true }).click();
+  await expect(page.locator('.thumbnail-button')).toHaveCount(1);
+  const changed = page.getByRole('button', { name: '文字: ページ削除の前に変更 最新の文字', exact: true });
+  await expect(changed).toBeVisible();
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.locator('.thumbnail-button')).toHaveCount(2);
+  await expect(changed).toBeVisible();
+  await changed.dblclick();
+  await input.fill('並べ替えの前に変更\n最後の文字');
+  await expect(input).toBeFocused();
+  const source = page.locator(`.thumbnail-button[data-page-id="${firstId}"]`);
+  const destination = page.locator('[data-page-entry]').last();
+  const box = (await destination.boundingBox())!;
+  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  await source.dispatchEvent('dragstart', { dataTransfer: transfer });
+  await destination.dispatchEvent('dragover', { dataTransfer: transfer, clientX: box.x + 30, clientY: box.y + box.height - 5 });
+  await destination.dispatchEvent('drop', { dataTransfer: transfer, clientX: box.x + 30, clientY: box.y + box.height - 5 });
+  await source.dispatchEvent('dragend', { dataTransfer: transfer });
+  await transfer.dispose();
+  await expect(page.locator('.thumbnail-button').last()).toHaveAttribute('data-page-id', firstId!);
+  await expect(input).not.toBeVisible();
+  const latest = page.getByRole('button', { name: '文字: 並べ替えの前に変更 最後の文字', exact: true });
+  await expect(latest).toBeVisible();
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.locator('.thumbnail-button').first()).toHaveAttribute('data-page-id', firstId!);
+  await expect(latest).toBeVisible();
+  const saved = await saveProject(page, testInfo);
+  expect(saved.data.pages).toHaveLength(2);
+  expect(saved.data.annotations).toHaveLength(1);
+  expect(saved.data.annotations[0].text).toBe('並べ替えの前に変更\n最後の文字');
+});
+
+test('文字入力中に別PDFの読み込みが失敗しても下書きを保ち、編集を続けて保存できる', async ({ page }, testInfo) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await placeAt(page, 70, 150);
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await input.fill('読み込み失敗で失わない\n入力途中の文字');
+  await expect(input).toBeFocused();
+  let confirmations = 0;
+  page.on('dialog', async dialog => { confirmations++; await dialog.accept(); });
+  // setInputFiles dispatches file selection without first moving focus away
+  // from the draft, as can happen when a desktop open request arrives.
+  await page.getByTestId('pdf-input').setInputFiles({ name: 'broken.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\nnot a valid PDF') });
+  await expect(page.getByRole('alert')).toContainText('PDFを開けませんでした');
+  expect(confirmations).toBe(1);
+  await expect(page.locator('.document-name')).toContainText('direct-edit.pdf');
+  await expect(input).toHaveValue('読み込み失敗で失わない\n入力途中の文字');
+  await expect(input).toBeEditable();
+  await input.fill('読み込み失敗の後も編集\n保存する文字');
+  await input.press('ControlOrMeta+Enter');
+  await expect(page.getByRole('button', { name: '文字: 読み込み失敗の後も編集 保存する文字', exact: true })).toBeVisible();
+  const saved = await saveProject(page, testInfo);
+  expect(saved.data.annotations).toHaveLength(1);
+  expect(saved.data.annotations[0].text).toBe('読み込み失敗の後も編集\n保存する文字');
 });
 
 test('印鑑と画像は縦横比を保って拡大でき、回転した用紙でも保存した寸法が一致する', async ({ page }, testInfo) => {

@@ -202,11 +202,12 @@ export function PdfPage({
   };
   const takeDraft = (): Annotation | null => {
     const pending = draftRef.current;
-    if (!pending) return null;
+    // Loading another document can fail. Keep the previous draft while editing
+    // is temporarily disabled, so that failure cannot silently erase input.
+    if (!pending || readOnly) return null;
     changeDraft(null);
     composing.current = false;
     if (
-      readOnly ||
       (!pending.original && !pending.annotation.text?.trim()) ||
       pending.annotation.pageId !== page.id
     )
@@ -227,10 +228,7 @@ export function PdfPage({
 
   useEffect(() => () => latestEditingChange.current(false), []);
   useEffect(() => {
-    if (
-      draftRef.current &&
-      (readOnly || draftRef.current.annotation.pageId !== page.id)
-    )
+    if (draftRef.current && draftRef.current.annotation.pageId !== page.id)
       cancelDraft();
     clearInteraction();
     touchPlace.current = null;
@@ -253,7 +251,7 @@ export function PdfPage({
     onTextDraftConsumed();
   }, [textDraft, readOnly, page.id]);
   useLayoutEffect(() => {
-    if (!draft) return;
+    if (!draft || readOnly) return;
     const input = textareaRef.current;
     input?.focus({ preventScroll: true });
     input?.setSelectionRange(input.value.length, input.value.length);
@@ -661,6 +659,7 @@ export function PdfPage({
               value={draft.annotation.text || ""}
               spellCheck={false}
               maxLength={3000}
+              disabled={readOnly}
               style={{
                 fontFamily: TEXT_FONT,
                 fontSize: (draft.annotation.fontSize || 16) * scale,
@@ -700,6 +699,7 @@ export function PdfPage({
               <button
                 type="button"
                 aria-label="文字入力を確定"
+                disabled={readOnly}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={commitDraft}
               >
@@ -708,6 +708,7 @@ export function PdfPage({
               <button
                 type="button"
                 aria-label="文字入力をキャンセル"
+                disabled={readOnly}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={cancelDraft}
               >

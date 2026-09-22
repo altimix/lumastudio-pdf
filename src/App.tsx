@@ -268,21 +268,31 @@ export default function App() {
     const draft = pageEditorRef.current?.flushText();
     return draft ? applyText(draft) : editsRef.current;
   };
+  const activatePage = (id: string) => {
+    if (busy) return;
+    flushInlineText();
+    setActiveId(id);
+    setSelectedId(null);
+  };
   const undo = () => {
     if (currentRef.current.busy || signedInput) return;
+    flushInlineText();
     closePageMenu();
     if (cursor.current > 0) {
       cursor.current--;
-      setEdits(history.current[cursor.current]);
+      editsRef.current = history.current[cursor.current];
+      setEdits(editsRef.current);
       setSelectedId(null);
     }
   };
   const redo = () => {
     if (currentRef.current.busy || signedInput) return;
+    flushInlineText();
     closePageMenu();
     if (cursor.current < history.current.length - 1) {
       cursor.current++;
-      setEdits(history.current[cursor.current]);
+      editsRef.current = history.current[cursor.current];
+      setEdits(editsRef.current);
       setSelectedId(null);
     }
   };
@@ -314,9 +324,10 @@ export default function App() {
   };
   const removeSelected = () => {
     if (selectedId) {
+      const current = flushInlineText();
       commit({
-        ...edits,
-        annotations: edits.annotations.filter((item) => item.id !== selectedId),
+        ...current,
+        annotations: current.annotations.filter((item) => item.id !== selectedId),
       });
       setSelectedId(null);
     }
@@ -324,12 +335,13 @@ export default function App() {
   const deletePage = (id: string) => {
     closePageMenu();
     if (busy || signedInput || edits.pages.length <= 1) return;
-    const index = edits.pages.findIndex((p) => p.id === id);
+    const current = flushInlineText();
+    const index = current.pages.findIndex((p) => p.id === id);
     if (index < 0) return;
-    const pages = edits.pages.filter((p) => p.id !== id);
+    const pages = current.pages.filter((p) => p.id !== id);
     commit({
       pages,
-      annotations: edits.annotations.filter((a) => a.pageId !== id),
+      annotations: current.annotations.filter((a) => a.pageId !== id),
     });
     const nextActiveId =
       page?.id === id ? pages[Math.min(index, pages.length - 1)].id : page.id;
@@ -351,8 +363,7 @@ export default function App() {
     anchor: HTMLElement,
   ) => {
     if (busy) return;
-    setActiveId(pageId);
-    setSelectedId(null);
+    activatePage(pageId);
     setPageMenu({ pageId, x, y, anchor });
   };
   const endPageDrag = () => {
@@ -367,16 +378,17 @@ export default function App() {
   ) => {
     endPageDrag();
     if (busy || signedInput) return;
-    const from = edits.pages.findIndex((p) => p.id === sourceId);
-    const target = edits.pages.findIndex((p) => p.id === targetId);
+    const current = flushInlineText();
+    const from = current.pages.findIndex((p) => p.id === sourceId);
+    const target = current.pages.findIndex((p) => p.id === targetId);
     if (from < 0 || target < 0 || from === target) return;
     const insertion = target + (after ? 1 : 0);
     const to = insertion - (from < insertion ? 1 : 0);
     if (from === to) return;
-    const pages = [...edits.pages];
+    const pages = [...current.pages];
     const [moving] = pages.splice(from, 1);
     pages.splice(to, 0, moving);
-    commit({ ...edits, pages });
+    commit({ ...current, pages });
     setActiveId(sourceId);
     setSelectedId(null);
     setTool("select");
@@ -1537,8 +1549,7 @@ export default function App() {
                           }}
                           onClick={() => {
                             closePageMenu();
-                            setActiveId(p.id);
-                            setSelectedId(null);
+                            activatePage(p.id);
                           }}
                         >
                           <div className="thumbnail-paper">
@@ -2158,12 +2169,13 @@ export default function App() {
                       aria-label="ページを前へ"
                       disabled={pageIndex === 0 || !!busy}
                       onClick={() => {
-                        const p = [...edits.pages];
+                        const current = flushInlineText();
+                        const p = [...current.pages];
                         [p[pageIndex - 1], p[pageIndex]] = [
                           p[pageIndex],
                           p[pageIndex - 1],
                         ];
-                        commit({ ...edits, pages: p });
+                        commit({ ...current, pages: p });
                       }}
                     >
                       <ArrowUp size={17} />
@@ -2172,12 +2184,13 @@ export default function App() {
                       aria-label="ページを後ろへ"
                       disabled={pageIndex === edits.pages.length - 1 || !!busy}
                       onClick={() => {
-                        const p = [...edits.pages];
+                        const current = flushInlineText();
+                        const p = [...current.pages];
                         [p[pageIndex + 1], p[pageIndex]] = [
                           p[pageIndex],
                           p[pageIndex + 1],
                         ];
-                        commit({ ...edits, pages: p });
+                        commit({ ...current, pages: p });
                       }}
                     >
                       <ArrowDown size={17} />
@@ -2185,16 +2198,17 @@ export default function App() {
                     <button
                       aria-label="ページを右に回転"
                       disabled={!!busy}
-                      onClick={() =>
+                      onClick={() => {
+                        const current = flushInlineText();
                         commit({
-                          ...edits,
-                          pages: edits.pages.map((p) =>
+                          ...current,
+                          pages: current.pages.map((p) =>
                             p.id === page.id
                               ? { ...p, rotation: (p.rotation + 90) % 360 }
                               : p,
                           ),
-                        })
-                      }
+                        });
+                      }}
                     >
                       <RotateCw size={17} />
                     </button>
@@ -2232,8 +2246,7 @@ export default function App() {
               aria-label="前のページ"
               disabled={!pdf || pageIndex <= 0}
               onClick={() => {
-                setActiveId(edits.pages[pageIndex - 1].id);
-                setSelectedId(null);
+                activatePage(edits.pages[pageIndex - 1].id);
               }}
             >
               <ChevronLeft size={16} />
@@ -2245,8 +2258,7 @@ export default function App() {
               aria-label="次のページ"
               disabled={!pdf || pageIndex >= edits.pages.length - 1}
               onClick={() => {
-                setActiveId(edits.pages[pageIndex + 1].id);
-                setSelectedId(null);
+                activatePage(edits.pages[pageIndex + 1].id);
               }}
             >
               <ChevronRight size={16} />
