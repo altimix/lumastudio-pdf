@@ -70,6 +70,33 @@ test.beforeEach(async ({ context }) => {
   await context.route('https://api.openai.com/**', route => route.abort());
 });
 
+test('枠線と塗りを両方消した透明な図形を作らず、線幅0の場合も表示を保つ', async ({ page }, info) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  const stroke = page.getByLabel('枠線を表示', { exact: true });
+  const fill = page.getByLabel('塗りつぶし', { exact: true });
+  const width = page.getByRole('spinbutton', { name: '枠線の太さ', exact: true });
+  await expect(stroke).toBeChecked();
+  await expect(stroke).toBeDisabled();
+  await width.fill('0'); await width.press('Enter');
+  await expect(width).toHaveValue('0.5');
+  await page.getByTestId('pdf-surface').click({ position: { x: 80, y: 120 } });
+  await fill.check();
+  await stroke.uncheck();
+  await expect(fill).toBeDisabled();
+  await stroke.check();
+  await width.fill('0'); await width.press('Enter');
+  await expect(width).toHaveValue('0');
+  await expect(fill).toBeDisabled();
+  await width.fill('2'); await width.press('Enter');
+  await fill.uncheck();
+  await expect(stroke).toBeDisabled();
+  await width.fill('0'); await width.press('Enter');
+  await expect(width).toHaveValue('0.5');
+  const saved = await saveProject(page, info);
+  expect(saved.data.annotations[0]).toMatchObject({ strokeColor: '#000000', strokeWidth: 0.5, fillColor: 'none' });
+});
+
 test('図形を四隅・四辺から自由に変形し、回転後も一操作のUndoと作業データ再開が一致する', async ({ page }, testInfo) => {
   await openFixture(page);
   const annotation = await placeShape(page, '長方形', 80, 140);

@@ -92,6 +92,7 @@ export function ShapeStyleFields({
 }) {
   const stroke = value.strokeColor ?? "#000000";
   const fill = value.fillColor ?? "none";
+  const visibleStroke = stroke !== "none" && (value.strokeWidth ?? 1.5) > 0;
   return (
     <fieldset
       className="material-style-fields shape-style-fields"
@@ -114,6 +115,7 @@ export function ShapeStyleFields({
           <input
             type="checkbox"
             checked={stroke !== "none"}
+            disabled={disabled || (stroke !== "none" && fill === "none")}
             onChange={(e) =>
               onChange({ strokeColor: e.target.checked ? "#000000" : "none" })
             }
@@ -133,7 +135,7 @@ export function ShapeStyleFields({
         <NumericField
           aria-label="枠線の太さ"
           value={value.strokeWidth ?? 1.5}
-          min={0}
+          min={fill === "none" ? 0.5 : 0}
           max={20}
           step={0.5}
           suffix="pt"
@@ -149,6 +151,7 @@ export function ShapeStyleFields({
           <input
             type="checkbox"
             checked={fill !== "none"}
+            disabled={disabled || (fill !== "none" && !visibleStroke)}
             onChange={(e) =>
               onChange({ fillColor: e.target.checked ? "#dbeafe" : "none" })
             }
@@ -163,6 +166,9 @@ export function ShapeStyleFields({
           onChange={(e) => onChange({ fillColor: e.target.value })}
         />
       </div>
+      <p className="help-text">
+        図形が見えなくならないよう、枠線か塗りつぶしのどちらかを表示します。
+      </p>
     </fieldset>
   );
 }
