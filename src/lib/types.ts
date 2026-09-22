@@ -1,4 +1,6 @@
-export type AnnotationType = 'text' | 'stamp' | 'image' | 'check'
+export type AnnotationType = 'text' | 'stamp' | 'image' | 'check' | 'shape'
+export type FontFamilyId = 'legacy' | 'noto-sans-jp' | 'noto-serif-jp' | 'm-plus-1' | 'biz-udgothic'
+export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle'
 
 /** Geometry uses points from the top-left of the original displayed PDF page. */
 export interface Annotation {
@@ -11,9 +13,17 @@ export interface Annotation {
   height: number
   text?: string
   fontSize?: number
+  fontFamily?: FontFamilyId
+  fontWeight?: 400 | 700
+  fontStyle?: 'normal' | 'italic'
+  underline?: boolean
   color?: string
   dataUrl?: string
   stampShape?: 'circle' | 'square'
+  shapeKind?: ShapeKind
+  strokeColor?: string
+  fillColor?: string
+  strokeWidth?: number
 }
 
 export interface PageInfo {

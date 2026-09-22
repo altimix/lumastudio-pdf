@@ -25,6 +25,7 @@ import {
   Save,
   RotateCw,
   ShieldCheck,
+  Shapes,
   Sparkles,
   Stamp,
   Trash2,
@@ -44,7 +45,25 @@ import {
   loadPdf,
   renderPdfPage,
 } from "./lib/pdf";
-import type { Annotation, PageInfo, Tool } from "./lib/types";
+import type {
+  Annotation,
+  FontFamilyId,
+  PageInfo,
+  ShapeKind,
+  Tool,
+} from "./lib/types";
+import {
+  DEFAULT_FONT_FAMILY,
+  DEFAULT_FONT_SIZE,
+  ensureTextFont,
+  isTextFontReady,
+  measureTextHeight,
+} from "./lib/fonts";
+import { NumericField } from "./components/NumericField";
+import {
+  TextStyleFields,
+  ShapeStyleFields,
+} from "./components/MaterialStyleFields";
 import {
   AnnotationVisual,
   PdfPage,
@@ -99,25 +118,6 @@ function readSaved<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function textHeight(value: string, size: number, width: number) {
-  const context = document.createElement("canvas").getContext("2d")!;
-  context.font = `400 ${size}px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif`;
-  let lines = 0;
-  for (const paragraph of value.split("\n")) {
-    let current = "";
-    lines++;
-    for (const char of Array.from(paragraph)) {
-      if (
-        current &&
-        context.measureText(current + char).width > Math.max(1, width - 4)
-      ) {
-        lines++;
-        current = char;
-      } else current += char;
-    }
-  }
-  return Math.ceil(lines * size * 1.4 + 6);
-}
 
 export default function App() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -132,17 +132,31 @@ export default function App() {
   const [tool, setTool] = useState<Tool>("select");
   const [scale, setScale] = useState(0.85);
   const [text, setText] = useState("");
-  const [fontSize, setFontSize] = useState(13);
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [fontFamily, setFontFamily] =
+    useState<FontFamilyId>(DEFAULT_FONT_FAMILY);
+  const [fontWeight, setFontWeight] = useState<400 | 700>(400);
+  const [fontStyle, setFontStyle] = useState<"normal" | "italic">("normal");
+  const [underline, setUnderline] = useState(false);
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
+  const [strokeColor, setStrokeColor] = useState("#000000");
+  const [fillColor, setFillColor] = useState("none");
+  const [strokeWidth, setStrokeWidth] = useState(1.5);
+  const [numericEditing, setNumericEditing] = useState(false);
+  const [numericPreview, setNumericPreview] = useState<Annotation | null>(null);
+  const numericPreviewRef = useRef<Annotation | null>(null);
+  const flushingControls = useRef(false);
   const [color, setColor] = useState("#000000");
   const [textDraft, setTextDraft] = useState<Annotation | null>(null);
   const [textEditing, setTextEditing] = useState(false);
   const pageEditorRef = useRef<PdfPageHandle>(null);
   const editsRef = useRef(edits);
   editsRef.current = edits;
+  const flushBeforeOperation = useRef<() => EditState>(() => editsRef.current);
   const [stamp, setStamp] = useState<SavedStamp>(() =>
     readSaved("luma.stamp.v1", { name: "", shape: "circle" }),
   );
-  const [stampSize, setStampSize] = useState(48);
+  const [stampSize, setStampSize] = useState(35);
   const [stampLibrary, setStampLibrary] = useState<SavedStamp[]>(() =>
     readSaved("luma.stamps.v1", []),
   );
@@ -189,12 +203,30 @@ export default function App() {
   const imageInput = useRef<HTMLInputElement>(null);
   const stampInput = useRef<HTMLInputElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const placementSettings = useRef({ fontSize, stampSize, strokeWidth });
+  placementSettings.current = { fontSize, stampSize, strokeWidth };
   const stateKey = JSON.stringify(edits);
-  const dirty = !!pdf && (stateKey !== savedState || textEditing);
+  const dirty =
+    !!pdf && (stateKey !== savedState || textEditing || numericEditing);
   const page =
     edits.pages.find((item) => item.id === activeId) ?? edits.pages[0];
   const pageIndex = page ? edits.pages.indexOf(page) : -1;
   const selected = edits.annotations.find((item) => item.id === selectedId);
+  const [, updateFontAvailability] = useState(0);
+  useEffect(() => {
+    if (selected?.type !== "text") return;
+    let cancelled = false;
+    void ensureTextFont(selected)
+      .then(() => {
+        if (!cancelled) updateFontAvailability((version) => version + 1);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setError(String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.fontFamily]);
   const viewport = usePdfViewport({
     workspaceRef,
     scale,
@@ -227,6 +259,8 @@ export default function App() {
     setError("");
   };
   const recordEdit = (next: EditState) => {
+    numericPreviewRef.current = null;
+    setNumericPreview(null);
     if (JSON.stringify(next) === JSON.stringify(editsRef.current)) return;
     history.current = [
       ...history.current.slice(0, cursor.current + 1),
@@ -264,10 +298,38 @@ export default function App() {
     setSelectedId(cleared ? null : annotation.id);
     return next;
   };
+  const flushNumericControls = () => {
+    if (!flushingControls.current) {
+      flushingControls.current = true;
+      try {
+        const focused = document.activeElement;
+        if (
+          focused instanceof HTMLElement &&
+          focused.matches('[data-numeric-input="true"]')
+        )
+          focused.blur();
+        const preview = numericPreviewRef.current;
+        if (preview) {
+          const current = editsRef.current;
+          commit({
+            ...current,
+            annotations: current.annotations.map((a) =>
+              a.id === preview.id ? preview : a,
+            ),
+          });
+        }
+      } finally {
+        flushingControls.current = false;
+      }
+    }
+    return editsRef.current;
+  };
   const flushInlineText = () => {
+    flushNumericControls();
     const draft = pageEditorRef.current?.flushText();
     return draft ? applyText(draft) : editsRef.current;
   };
+  flushBeforeOperation.current = flushNumericControls;
   const activatePage = (id: string) => {
     if (busy) return;
     flushInlineText();
@@ -296,38 +358,90 @@ export default function App() {
       setSelectedId(null);
     }
   };
-  const updateSelected = (change: Partial<Annotation>) => {
-    if (!selected || !page) return;
-    const updated = { ...selected, ...change };
-    if (selected.type === "image" && "width" in change)
-      updated.height = (updated.width * selected.height) / selected.width;
-    if (selected.type === "image" && "height" in change)
-      updated.width = (updated.height * selected.width) / selected.height;
+  const changedAnnotation = (
+    source: Annotation,
+    change: Partial<Annotation>,
+    sheet: PageInfo,
+  ) => {
+    const updated = { ...source, ...change };
     if (
-      updated.type === "text" &&
-      ("text" in change || "fontSize" in change || "width" in change)
-    )
-      updated.height = Math.max(
-        updated.height,
-        textHeight(updated.text ?? "", updated.fontSize ?? 13, updated.width),
+      (source.type === "image" || source.type === "stamp") &&
+      ("width" in change || "height" in change)
+    ) {
+      const ratio =
+        "width" in change
+          ? updated.width / source.width
+          : updated.height / source.height;
+      const bounded = Math.min(
+        ratio,
+        sheet.width / source.width,
+        sheet.height / source.height,
       );
-    updated.width = Math.min(page.width, Math.max(8, updated.width));
-    updated.height = Math.min(page.height, Math.max(8, updated.height));
-    updated.x = Math.max(0, Math.min(page.width - updated.width, updated.x));
-    updated.y = Math.max(0, Math.min(page.height - updated.height, updated.y));
-    commit({
-      ...edits,
-      annotations: edits.annotations.map((item) =>
-        item.id === selected.id ? updated : item,
-      ),
-    });
+      updated.width = source.width * bounded;
+      updated.height = source.height * bounded;
+    }
+    updated.width = Math.min(sheet.width, Math.max(8, updated.width));
+    if (updated.type === "text")
+      updated.height = Math.max(updated.height, measureTextHeight(updated));
+    updated.height = Math.min(sheet.height, Math.max(8, updated.height));
+    updated.x = Math.max(0, Math.min(sheet.width - updated.width, updated.x));
+    updated.y = Math.max(0, Math.min(sheet.height - updated.height, updated.y));
+    return updated;
+  };
+  const updateSelected = (change: Partial<Annotation>) => {
+    if (!selectedId || currentRef.current.busy || signedInput) return;
+    const current = flushInlineText();
+    const source = current.annotations.find((a) => a.id === selectedId);
+    const sheet = current.pages.find((p) => p.id === source?.pageId);
+    if (!source || !sheet) return;
+    const next = { ...source, ...change };
+    const apply = () => {
+      const latest = editsRef.current;
+      if (!latest.annotations.some((a) => a.id === source.id)) return;
+      const updated = changedAnnotation(source, change, sheet);
+      recordEdit({
+        ...latest,
+        annotations: latest.annotations.map((a) =>
+          a.id === source.id ? updated : a,
+        ),
+      });
+    };
+    if (next.type !== "text" || isTextFontReady(next)) apply();
+    else {
+      currentRef.current.busy = "フォントを読み込んでいます";
+      setBusy(currentRef.current.busy);
+      void ensureTextFont(next)
+        .then(apply)
+        .catch((error: unknown) => setError(String(error)))
+        .finally(() => {
+          currentRef.current.busy = "";
+          setBusy("");
+        });
+    }
+  };
+  const previewSelected = (
+    field: "fontSize" | "width" | "height" | "strokeWidth",
+    value: number | null,
+  ) => {
+    const source = editsRef.current.annotations.find(
+      (a) => a.id === selectedId,
+    );
+    const sheet = editsRef.current.pages.find((p) => p.id === source?.pageId);
+    const next =
+      value === null || !source || !sheet
+        ? null
+        : changedAnnotation(source, { [field]: value }, sheet);
+    numericPreviewRef.current = next;
+    setNumericPreview(next);
   };
   const removeSelected = () => {
     if (selectedId) {
       const current = flushInlineText();
       commit({
         ...current,
-        annotations: current.annotations.filter((item) => item.id !== selectedId),
+        annotations: current.annotations.filter(
+          (item) => item.id !== selectedId,
+        ),
       });
       setSelectedId(null);
     }
@@ -425,6 +539,7 @@ export default function App() {
       );
       return;
     }
+    flushBeforeOperation.current();
     setBusy("PDFを開いています");
     setError("");
     try {
@@ -709,6 +824,7 @@ export default function App() {
       )
     )
       return;
+    flushNumericControls();
     setBusy("作業データを開いています");
     setProjectError("");
     let candidate: Awaited<ReturnType<typeof loadPdf>> | null = null;
@@ -980,9 +1096,17 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   });
 
-  const place = (x: number, y: number) => {
-    if (!page || tool === "select" || tool === "hand" || busy || signedInput)
+  const place = async (x: number, y: number) => {
+    if (
+      !page ||
+      tool === "select" ||
+      tool === "hand" ||
+      currentRef.current.busy ||
+      signedInput
+    )
       return;
+    flushNumericControls();
+    const { fontSize, stampSize, strokeWidth } = placementSettings.current;
     if (tool === "stamp" && !stamp.name.trim() && !stamp.dataUrl) {
       setError("印鑑に入れる名前を入力してください。");
       return;
@@ -1009,24 +1133,32 @@ export default function App() {
           : tool === "image"
             ? imageData!.width
             : tool === "check"
-              ? 22
-              : stampSize;
+              ? 12
+              : tool === "shape"
+                ? shapeKind === "rectangle"
+                  ? 120
+                  : 100
+                : stampSize;
     let height =
       tool === "text"
         ? Math.max(25, text.split("\n").length * fontSize * 1.45 + 6)
         : tool === "image"
           ? imageData!.height
           : tool === "check"
-            ? 22
-            : stampSize;
+            ? 12
+            : tool === "shape"
+              ? shapeKind === "ellipse"
+                ? 100
+                : shapeKind === "triangle"
+                  ? 90
+                  : 80
+              : stampSize;
     if (tool === "stamp" && stamp.dataUrl && stamp.aspectRatio) {
       if (stamp.aspectRatio < 1) width *= stamp.aspectRatio;
       else height /= stamp.aspectRatio;
     }
     width = Math.min(page.width, width);
     height = Math.min(page.height, height);
-    if (tool === "text")
-      height = Math.min(page.height, textHeight(text, fontSize, width));
     const annotation: Annotation = {
       id: crypto.randomUUID(),
       pageId: page.id,
@@ -1035,8 +1167,14 @@ export default function App() {
       y: Math.max(0, Math.min(page.height - height, y)),
       width,
       height,
-      text: tool === "stamp" ? stamp.name : text,
+      text: tool === "stamp" ? stamp.name : tool === "text" ? text : undefined,
       fontSize,
+      ...(tool === "text"
+        ? { fontFamily, fontWeight, fontStyle, underline }
+        : {}),
+      ...(tool === "shape"
+        ? { shapeKind, strokeColor, fillColor, strokeWidth }
+        : {}),
       color: tool === "stamp" ? "#bb373c" : color,
       stampShape: stamp.shape,
       dataUrl:
@@ -1046,15 +1184,40 @@ export default function App() {
             ? imageData?.dataUrl
             : undefined,
     };
-    if (tool === "text" && !text.trim()) setTextDraft(annotation);
-    else
-      commit({
-        ...editsRef.current,
-        annotations: [...editsRef.current.annotations, annotation],
-      });
-    setSelectedId(annotation.id);
-    setTool("select");
-    setError("");
+    const finish = () => {
+      if (annotation.type === "text") {
+        annotation.height = Math.min(
+          page.height,
+          measureTextHeight(annotation),
+        );
+        annotation.y = Math.max(
+          0,
+          Math.min(page.height - annotation.height, y),
+        );
+      }
+      if (tool === "text" && !text.trim()) setTextDraft(annotation);
+      else
+        recordEdit({
+          ...editsRef.current,
+          annotations: [...editsRef.current.annotations, annotation],
+        });
+      setSelectedId(annotation.id);
+      setTool("select");
+      setError("");
+    };
+    if (annotation.type === "text" && !isTextFontReady(annotation)) {
+      currentRef.current.busy = "フォントを読み込んでいます";
+      setBusy(currentRef.current.busy);
+      try {
+        await ensureTextFont(annotation);
+        finish();
+      } catch (error) {
+        setError(String(error));
+      } finally {
+        currentRef.current.busy = "";
+        setBusy("");
+      }
+    } else finish();
   };
   const chooseTool = (value: Tool) => {
     flushInlineText();
@@ -1147,6 +1310,7 @@ export default function App() {
 
   const runAi = async () => {
     if (!pdf || !page || busy) return;
+    const current = flushInlineText();
     setBusy("AIが記入欄を読み取っています");
     setError("");
     setAiResult(null);
@@ -1154,7 +1318,7 @@ export default function App() {
       const canvas = document.createElement("canvas");
       await renderPdfPage(pdf, page.sourceIndex, canvas, 1.8);
       const context = canvas.getContext("2d")!;
-      for (const annotation of edits.annotations.filter(
+      for (const annotation of current.annotations.filter(
         (a) => a.pageId === page.id,
       )) {
         const img = new Image();
@@ -1208,8 +1372,9 @@ export default function App() {
       setBusy("");
     }
   };
-  const applyAi = () => {
-    if (!aiResult) return;
+  const applyAi = async () => {
+    if (!aiResult || currentRef.current.busy) return;
+    const current = flushInlineText();
     const additions: Annotation[] = aiResult.placements
       .filter((_, i) => aiSelection.includes(i))
       .map((p) => ({
@@ -1228,24 +1393,50 @@ export default function App() {
             : p.height,
         text: p.type === "stamp" ? stamp.name : p.text,
         fontSize: Math.max(
-          7,
+          6,
           Math.min(
-            14,
-            Math.max(7, (p.height - 4) / 1.4),
+            fontSize,
+            Math.max(6, (p.height - 6) / 1.4),
             (p.width - 4) / Math.max(1, p.text.length),
           ),
         ),
         color: p.type === "stamp" ? "#bb373c" : "#000000",
+        ...(p.type === "text"
+          ? { fontFamily, fontWeight, fontStyle, underline }
+          : {}),
         stampShape: stamp.shape,
         dataUrl: p.type === "stamp" ? stamp.dataUrl : undefined,
       }));
-    commit({ ...edits, annotations: [...edits.annotations, ...additions] });
-    setAiOpen(false);
-    setTool("select");
-    setSelectedId(additions[0]?.id ?? null);
-    notify(
-      `${additions.length}件を配置しました。位置と内容を確認し、必要に応じて編集してください。`,
-    );
+    currentRef.current.busy = "文字の書式を準備しています";
+    setBusy(currentRef.current.busy);
+    try {
+      await Promise.all(
+        additions.filter((a) => a.type === "text").map(ensureTextFont),
+      );
+      for (const a of additions) {
+        const sheet = current.pages.find((p) => p.id === a.pageId);
+        if (sheet && a.type === "text")
+          a.height = Math.min(
+            sheet.height - a.y,
+            Math.max(a.height, measureTextHeight(a)),
+          );
+      }
+      recordEdit({
+        ...current,
+        annotations: [...current.annotations, ...additions],
+      });
+      setAiOpen(false);
+      setTool("select");
+      setSelectedId(additions[0]?.id ?? null);
+      notify(
+        `${additions.length}件を配置しました。位置と内容を確認し、必要に応じて編集してください。`,
+      );
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      currentRef.current.busy = "";
+      setBusy("");
+    }
   };
 
   const toolItems: { id: Tool; label: string; icon: typeof Type }[] = [
@@ -1255,6 +1446,7 @@ export default function App() {
     { id: "stamp", label: "印鑑", icon: Stamp },
     { id: "check", label: "チェック", icon: CheckCheck },
     { id: "image", label: "画像", icon: ImagePlus },
+    { id: "shape", label: "図形", icon: Shapes },
   ];
   const stampPreview: Annotation = {
     id: "preview",
@@ -1666,9 +1858,11 @@ export default function App() {
                   document={pdf}
                   page={page}
                   scale={scale}
-                  annotations={edits.annotations.filter(
-                    (a) => a.pageId === page.id,
-                  )}
+                  annotations={edits.annotations
+                    .map((a) =>
+                      numericPreview?.id === a.id ? numericPreview : a,
+                    )
+                    .filter((a) => a.pageId === page.id)}
                   selectedId={selectedId}
                   placing={tool !== "select" && tool !== "hand"}
                   readOnly={signedInput || !!busy}
@@ -1688,6 +1882,7 @@ export default function App() {
                   }
                   onPlace={place}
                   onSelect={(id) => {
+                    flushInlineText();
                     setSelectedId(id);
                     setTool("select");
                   }}
@@ -1718,15 +1913,20 @@ export default function App() {
                       ? "文字を記入"
                       : tool === "image"
                         ? "画像を追加"
-                        : tool === "check"
-                          ? "チェックを追加"
-                          : "書類を仕上げる"}
+                        : tool === "shape"
+                          ? "図形を追加"
+                          : tool === "check"
+                            ? "チェックを追加"
+                            : "書類を仕上げる"}
               </h2>
               {selected && (
                 <button
                   className="icon-button"
                   aria-label="選択を解除"
-                  onClick={() => setSelectedId(null)}
+                  onClick={() => {
+                    flushInlineText();
+                    setSelectedId(null);
+                  }}
                 >
                   <X size={16} />
                 </button>
@@ -1742,7 +1942,9 @@ export default function App() {
                         ? "印鑑"
                         : selected.type === "image"
                           ? "画像・印影"
-                          : "チェック"}
+                          : selected.type === "shape"
+                            ? "図形"
+                            : "チェック"}
                   </span>
                   {(selected.type === "text" || selected.type === "stamp") && (
                     <label>
@@ -1758,61 +1960,93 @@ export default function App() {
                     </label>
                   )}
                   {selected.type === "text" && (
+                    <TextStyleFields
+                      value={selected}
+                      onChange={updateSelected}
+                      disabled={!!busy || signedInput}
+                    />
+                  )}
+                  {selected.type === "shape" && (
+                    <ShapeStyleFields
+                      key={selected.id}
+                      value={selected}
+                      onChange={updateSelected}
+                      onWidthPreview={(value) =>
+                        previewSelected("strokeWidth", value)
+                      }
+                      onScrubStart={flushInlineText}
+                      onEditingChange={setNumericEditing}
+                      disabled={!!busy || signedInput}
+                    />
+                  )}
+                  {selected.type === "text" && (
                     <label>
                       文字サイズ
-                      <input
-                        type="number"
+                      <NumericField
+                        key={`${selected.id}-fontSize`}
+                        aria-label="文字サイズ"
                         min={6}
                         max={96}
-                        step={0.1}
-                        value={
-                          Math.round((selected.fontSize ?? 13) * 100) / 100
+                        step={1}
+                        suffix="pt"
+                        value={selected.fontSize ?? 16}
+                        disabled={
+                          !!busy || signedInput || !isTextFontReady(selected)
                         }
-                        onChange={(e) =>
-                          updateSelected({
-                            fontSize: Math.max(
-                              6,
-                              Math.min(96, Number(e.target.value)),
-                            ),
-                          })
+                        onChange={(fontSize) => updateSelected({ fontSize })}
+                        onPreview={(value) =>
+                          previewSelected("fontSize", value)
                         }
+                        onScrubStart={flushInlineText}
+                        onEditingChange={setNumericEditing}
                       />
                     </label>
                   )}
                   <div className="two-fields">
                     <label>
                       幅
-                      <input
+                      <NumericField
+                        key={`${selected.id}-width`}
                         aria-label="要素の幅"
-                        type="number"
                         min={8}
                         max={page?.width}
-                        value={Math.round(selected.width)}
-                        onChange={(e) =>
-                          updateSelected({
-                            width: Number(e.target.value),
-                            ...(selected.type === "stamp"
-                              ? { height: Number(e.target.value) }
-                              : {}),
-                          })
+                        value={selected.width}
+                        suffix="pt"
+                        disabled={
+                          !!busy ||
+                          signedInput ||
+                          (selected.type === "text" &&
+                            !isTextFontReady(selected))
                         }
+                        onChange={(width) => updateSelected({ width })}
+                        onPreview={(value) => previewSelected("width", value)}
+                        onScrubStart={flushInlineText}
+                        onEditingChange={setNumericEditing}
                       />
                     </label>
                     <label>
                       高さ
-                      <input
+                      <NumericField
+                        key={`${selected.id}-height`}
                         aria-label="要素の高さ"
-                        type="number"
                         min={8}
                         max={page?.height}
-                        value={Math.round(selected.height)}
-                        onChange={(e) =>
-                          updateSelected({ height: Number(e.target.value) })
+                        value={selected.height}
+                        suffix="pt"
+                        disabled={
+                          !!busy ||
+                          signedInput ||
+                          (selected.type === "text" &&
+                            !isTextFontReady(selected))
                         }
+                        onChange={(height) => updateSelected({ height })}
+                        onPreview={(value) => previewSelected("height", value)}
+                        onScrubStart={flushInlineText}
+                        onEditingChange={setNumericEditing}
                       />
                     </label>
                   </div>
-                  {selected.type !== "image" && (
+                  {selected.type !== "image" && selected.type !== "shape" && (
                     <label className="color-field">
                       色
                       <input
@@ -1825,7 +2059,10 @@ export default function App() {
                     </label>
                   )}
                   <p className="help-text">
-                    四隅をドラッグしてサイズ変更。矢印キーで微調整、Shift＋矢印で大きく移動。文字はダブルクリックで直接編集できます。
+                    {selected.type === "shape"
+                      ? "辺や角をドラッグすると、縦横を自由に変えられます。"
+                      : "四隅をドラッグしてサイズ変更。文字はダブルクリックで直接編集できます。"}
+                    数値欄は直接入力・横ドラッグで調整。矢印キーで素材の位置を微調整できます。
                   </p>
                   <button
                     className="secondary full"
@@ -1860,6 +2097,45 @@ export default function App() {
                     この要素を削除
                   </button>
                 </>
+              ) : tool === "shape" ? (
+                <>
+                  <ShapeStyleFields
+                    value={{ shapeKind, strokeColor, fillColor, strokeWidth }}
+                    disabled={!!busy || signedInput}
+                    onChange={(change) => {
+                      if (change.shapeKind) setShapeKind(change.shapeKind);
+                      if (change.strokeColor !== undefined)
+                        setStrokeColor(change.strokeColor);
+                      if (change.fillColor !== undefined)
+                        setFillColor(change.fillColor);
+                      if (change.strokeWidth !== undefined) {
+                        placementSettings.current.strokeWidth =
+                          change.strokeWidth;
+                        setStrokeWidth(change.strokeWidth);
+                      }
+                    }}
+                  />
+                  <div className="shape-preview" aria-label="図形のプレビュー">
+                    <AnnotationVisual
+                      annotation={{
+                        id: "shape-preview",
+                        pageId: "",
+                        type: "shape",
+                        shapeKind,
+                        strokeColor,
+                        fillColor,
+                        strokeWidth,
+                        x: 0,
+                        y: 0,
+                        width: 150,
+                        height: 100,
+                      }}
+                    />
+                  </div>
+                  <p className="help-text">
+                    用紙をクリックして配置します。選択した図形の辺・角をドラッグすると、長方形や楕円など自由な縦横比に変えられます。
+                  </p>
+                </>
               ) : tool === "text" ? (
                 <>
                   <label>
@@ -1873,19 +2149,31 @@ export default function App() {
                       placeholder="氏名、住所、口座番号など"
                     />
                   </label>
+                  <TextStyleFields
+                    value={{ fontFamily, fontWeight, fontStyle, underline }}
+                    disabled={!!busy}
+                    onChange={(change) => {
+                      if (change.fontFamily) setFontFamily(change.fontFamily);
+                      if (change.fontWeight) setFontWeight(change.fontWeight);
+                      if (change.fontStyle) setFontStyle(change.fontStyle);
+                      if (change.underline !== undefined)
+                        setUnderline(change.underline);
+                    }}
+                  />
                   <div className="two-fields">
                     <label>
                       文字サイズ
-                      <input
-                        type="number"
+                      <NumericField
+                        aria-label="文字サイズ"
                         min={6}
                         max={96}
                         value={fontSize}
-                        onChange={(e) =>
-                          setFontSize(
-                            Math.max(6, Math.min(96, Number(e.target.value))),
-                          )
-                        }
+                        suffix="pt"
+                        disabled={!!busy}
+                        onChange={(value) => {
+                          placementSettings.current.fontSize = value;
+                          setFontSize(value);
+                        }}
                       />
                     </label>
                     <label>
@@ -2027,12 +2315,17 @@ export default function App() {
                     <span className="muted">
                       {Math.round((stampSize * 25.4) / 72)} mm
                     </span>
-                    <input
-                      type="range"
-                      min={24}
-                      max={100}
+                    <NumericField
+                      aria-label="印鑑の大きさ"
+                      min={8}
+                      max={200}
                       value={stampSize}
-                      onChange={(e) => setStampSize(Number(e.target.value))}
+                      onChange={(value) => {
+                        placementSettings.current.stampSize = value;
+                        setStampSize(value);
+                      }}
+                      suffix="pt"
+                      disabled={!!busy}
                     />
                   </label>
                   <button

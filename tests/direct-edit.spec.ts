@@ -283,11 +283,11 @@ test('文字を角から拡大して一度で元に戻せ、矢印キーで微�
   const annotation = page.getByRole('button', { name: '文字: 大きさを変更', exact: true });
   const resized = await growSelected(page, annotation, 1.4);
   const fontSize = Number(await page.getByLabel('文字サイズ', { exact: true }).inputValue());
-  expect(fontSize).toBeGreaterThan(13);
+  expect(fontSize).toBeGreaterThan(11);
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await expect.poll(async () => (await dimensions(annotation)).width).toBeCloseTo(resized.before.width, 1);
   await annotation.click();
-  await expect(page.getByLabel('文字サイズ', { exact: true })).toHaveValue('13');
+  await expect(page.getByLabel('文字サイズ', { exact: true })).toHaveValue('11');
   await page.getByRole('button', { name: 'やり直す', exact: true }).click();
   await expect.poll(async () => (await dimensions(annotation)).width).toBeCloseTo(resized.after.width, 1);
   await annotation.click();

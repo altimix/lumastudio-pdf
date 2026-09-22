@@ -1,0 +1,50 @@
+.numeric-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+  width: 100%;
+  touch-action: pan-y;
+}
+
+.numeric-field > input {
+  padding-right: 49px;
+  font-variant-numeric: tabular-nums;
+  touch-action: pan-y;
+}
+
+.numeric-field > input:focus-visible {
+  outline: 2px solid #5f9685;
+  outline-offset: 2px;
+}
+
+.numeric-field-hint {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #7b9491;
+  font-size: 10px;
+  font-weight: 400;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.numeric-field.is-scrubbing,
+.numeric-field.is-scrubbing > input {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.numeric-field.is-scrubbing > input {
+  border-color: #42836d;
+  background: #f0f8f4;
+  caret-color: transparent;
+}
+
+.numeric-field[data-disabled] .numeric-field-hint {
+  cursor: default;
+  opacity: 0.5;
+}

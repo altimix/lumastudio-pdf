@@ -1,6 +1,7 @@
 import type { Annotation, PageInfo } from "./types";
 
 export type ResizeCorner = "nw" | "ne" | "sw" | "se";
+export type ResizeHandle = ResizeCorner | "n" | "e" | "s" | "w";
 export type Point = { x: number; y: number };
 
 /** Convert the rotated page's bounding box back into original PDF points. */
@@ -19,10 +20,10 @@ export function pointOnPage(
   return { x, y };
 }
 
-/** Keep the opposite corner fixed while resizing the complete annotation. */
+/** Keep the opposite corner or edge fixed while resizing the annotation. */
 export function resizeAnnotation(
   annotation: Annotation,
-  corner: ResizeCorner,
+  corner: ResizeHandle,
   delta: Point,
   page: Pick<PageInfo, "width" | "height">,
 ): Partial<Annotation> {
@@ -30,6 +31,38 @@ export function resizeAnnotation(
   const north = corner.includes("n");
   const anchorX = west ? annotation.x + annotation.width : annotation.x;
   const anchorY = north ? annotation.y + annotation.height : annotation.y;
+  if (annotation.type === "shape") {
+    // Shapes deliberately stretch independently. Edge handles leave the other
+    // axis untouched, and none of the handles may flip or leave the page.
+    const horizontal = west || corner.includes("e");
+    const vertical = north || corner.includes("s");
+    const roomX = west ? anchorX : page.width - anchorX;
+    const roomY = north ? anchorY : page.height - anchorY;
+    const width = horizontal
+      ? Math.min(
+          roomX,
+          Math.max(
+            Math.min(8, roomX),
+            annotation.width + (west ? -delta.x : delta.x),
+          ),
+        )
+      : annotation.width;
+    const height = vertical
+      ? Math.min(
+          roomY,
+          Math.max(
+            Math.min(8, roomY),
+            annotation.height + (north ? -delta.y : delta.y),
+          ),
+        )
+      : annotation.height;
+    return {
+      x: west ? anchorX - width : annotation.x,
+      y: north ? anchorY - height : annotation.y,
+      width,
+      height,
+    };
+  }
   // Text rendering keeps 2pt at each side and 6pt of total vertical padding.
   // Scale its content area with the font, otherwise shrinking adds wrapped
   // lines while making the box too short to show those lines.

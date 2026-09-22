@@ -1,4 +1,4 @@
-import type { Annotation, PageInfo } from './types'
+import type { Annotation, FontFamilyId, PageInfo } from './types'
 
 /** A portable editing document. Account settings and reusable stamp libraries are not included. */
 export interface PdfProject {
@@ -13,6 +13,7 @@ const MAX_PDF_BYTES = 50 * 1024 * 1024
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const ROTATIONS = new Set([0, 90, 180, 270])
+const FONT_FAMILIES = new Set<FontFamilyId>(['legacy', 'noto-sans-jp', 'noto-serif-jp', 'm-plus-1', 'biz-udgothic'])
 
 function fail(message: string): never {
   throw new Error(`作業ファイルを読み書きできません。${message}`)
@@ -43,6 +44,12 @@ function integer(value: unknown, label: string, minimum: number, maximum: number
 
 function rotation(value: unknown, label: string): number {
   if (typeof value !== 'number' || !ROTATIONS.has(value)) fail(`${label}は0・90・180・270度で指定してください。`)
+  return value
+}
+
+function color(value: unknown, label: string, allowNone = false): string {
+  if (allowNone && value === 'none') return value
+  if (typeof value !== 'string' || !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu.test(value)) fail(`${label}は16進数の色指定にしてください。`)
   return value
 }
 
@@ -141,7 +148,7 @@ function validateProject(value: unknown): PdfProject {
     const page = pagesById.get(pageId)
     if (!page) fail('記入先のページがありません。')
     const type = annotation.type
-    if (type !== 'text' && type !== 'stamp' && type !== 'image' && type !== 'check') fail('記入の種類が不正です。')
+    if (type !== 'text' && type !== 'stamp' && type !== 'image' && type !== 'check' && type !== 'shape') fail('記入の種類が不正です。')
     const x = finite(annotation.x, '記入の横位置', 0, page.width)
     const y = finite(annotation.y, '記入の縦位置', 0, page.height)
     const width = finite(annotation.width, '記入の幅', Number.MIN_VALUE, page.width)
@@ -150,14 +157,38 @@ function validateProject(value: unknown): PdfProject {
     const result: Annotation = { id, pageId, type, x, y, width, height }
     if (annotation.text !== undefined) result.text = string(annotation.text, '記入する文字', 3000, true)
     if (annotation.fontSize !== undefined) result.fontSize = finite(annotation.fontSize, '文字サイズ', 6, 96)
+    // Missing font metadata keeps the OS font used by older work files. Never
+    // replace it with the default font for newly created annotations.
+    if (annotation.fontFamily !== undefined) {
+      if (!FONT_FAMILIES.has(annotation.fontFamily as FontFamilyId)) fail('フォントの種類が不正です。')
+      result.fontFamily = annotation.fontFamily as FontFamilyId
+    }
+    if (annotation.fontWeight !== undefined) {
+      if (annotation.fontWeight !== 400 && annotation.fontWeight !== 700) fail('文字の太さは400または700にしてください。')
+      result.fontWeight = annotation.fontWeight
+    }
+    if (annotation.fontStyle !== undefined) {
+      if (annotation.fontStyle !== 'normal' && annotation.fontStyle !== 'italic') fail('文字のスタイルが不正です。')
+      result.fontStyle = annotation.fontStyle
+    }
+    if (annotation.underline !== undefined) {
+      if (typeof annotation.underline !== 'boolean') fail('下線の指定が不正です。')
+      result.underline = annotation.underline
+    }
     if (annotation.color !== undefined) {
-      if (typeof annotation.color !== 'string' || !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu.test(annotation.color)) fail('記入の色は16進数の色指定にしてください。')
-      result.color = annotation.color
+      result.color = color(annotation.color, '記入の色')
     }
     if (annotation.stampShape !== undefined) {
       if (annotation.stampShape !== 'circle' && annotation.stampShape !== 'square') fail('印鑑の形が不正です。')
       result.stampShape = annotation.stampShape
     }
+    if (type === 'shape' || annotation.shapeKind !== undefined) {
+      if (annotation.shapeKind !== 'rectangle' && annotation.shapeKind !== 'ellipse' && annotation.shapeKind !== 'triangle') fail('図形の種類が不正です。')
+      result.shapeKind = annotation.shapeKind
+    }
+    if (annotation.fillColor !== undefined) result.fillColor = color(annotation.fillColor, '塗りつぶしの色', true)
+    if (annotation.strokeColor !== undefined) result.strokeColor = color(annotation.strokeColor, '枠線の色', true)
+    if (annotation.strokeWidth !== undefined) result.strokeWidth = finite(annotation.strokeWidth, '枠線の太さ', 0, 20)
     if (type === 'image' || annotation.dataUrl !== undefined) {
       result.dataUrl = validateImage(annotation.dataUrl)
       contentSize += result.dataUrl.length
@@ -172,7 +203,7 @@ function validateProject(value: unknown): PdfProject {
 export function encodeProject(project: PdfProject): Uint8Array {
   const clean = validateProject(project)
   const serialized = JSON.stringify({
-    app: 'LumaStudio PDF', version: 1,
+    app: 'LumaStudio PDF', version: 2,
     filename: clean.filename,
     original: encodeBase64(clean.original),
     pages: clean.pages,
@@ -190,7 +221,7 @@ export function decodeProject(bytes: Uint8Array): PdfProject {
   catch { fail('作業ファイルの文字形式またはJSON形式が不正です。') }
   const raw = object(parsed, '作業ファイル')
   if (raw.app !== 'LumaStudio PDF') fail('LumaStudio PDFの作業ファイルを選択してください。')
-  if (raw.version !== 1) fail('この作業ファイルのバージョンには対応していません。')
+  if (raw.version !== 1 && raw.version !== 2) fail('この作業ファイルのバージョンには対応していません。')
   return validateProject({
     filename: raw.filename,
     original: decodeBase64(raw.original, MAX_PDF_BYTES, '元のPDF（50MBまで）'),

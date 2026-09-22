@@ -42,6 +42,22 @@
   right: -14px;
   bottom: -14px;
 }
+.annotation-resize-handle.n {
+  left: calc(50% - 14px);
+  top: -14px;
+}
+.annotation-resize-handle.e {
+  right: -14px;
+  top: calc(50% - 14px);
+}
+.annotation-resize-handle.s {
+  left: calc(50% - 14px);
+  bottom: -14px;
+}
+.annotation-resize-handle.w {
+  left: -14px;
+  top: calc(50% - 14px);
+}
 .annotation-resize-handle > span {
   width: 8px;
   height: 8px;
@@ -151,6 +167,22 @@
   .annotation-resize-handle.se {
     right: -22px;
     bottom: -22px;
+  }
+  .annotation-resize-handle.n {
+    left: calc(50% - 22px);
+    top: -22px;
+  }
+  .annotation-resize-handle.e {
+    right: -22px;
+    top: calc(50% - 22px);
+  }
+  .annotation-resize-handle.s {
+    left: calc(50% - 22px);
+    bottom: -22px;
+  }
+  .annotation-resize-handle.w {
+    left: -22px;
+    top: calc(50% - 22px);
   }
   .annotation-resize-handle > span {
     width: 10px;

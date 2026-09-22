@@ -1,7 +1,7 @@
 {
   "name": "lumastudio-pdf",
   "productName": "LumaStudio PDF",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "PDFに記入して、印鑑を押して、すぐに返送。Windows・macOS向けPDF編集アプリ。",
   "private": true,
   "type": "module",
@@ -139,6 +139,10 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@fontsource-variable/m-plus-1": "5.3.0",
+    "@fontsource-variable/noto-sans-jp": "5.3.0",
+    "@fontsource-variable/noto-serif-jp": "5.3.0",
+    "@fontsource/biz-udgothic": "5.3.0",
     "@playwright/test": "^1.63.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

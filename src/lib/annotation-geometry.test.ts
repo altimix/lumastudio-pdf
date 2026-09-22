@@ -3,6 +3,7 @@ import {
   pointOnPage,
   resizeAnnotation,
   type ResizeCorner,
+  type ResizeHandle,
 } from "./annotation-geometry";
 import type { Annotation } from "./types";
 
@@ -34,6 +35,91 @@ describe("annotation coordinates", () => {
           { ...page, rotation },
         ),
       ).toEqual({ x: 100, y: 200 });
+    },
+  );
+});
+
+describe("shape resize", () => {
+  const shape: Annotation = {
+    ...annotation,
+    type: "shape",
+    shapeKind: "ellipse",
+  };
+
+  it.each<ResizeCorner>(["nw", "ne", "sw", "se"])(
+    "stretches axes independently and anchors the opposite %s corner",
+    (corner) => {
+      const result = {
+        ...shape,
+        ...resizeAnnotation(
+          shape,
+          corner,
+          {
+            x: corner.includes("w") ? -50 : 50,
+            y: corner.includes("n") ? -10 : 10,
+          },
+          page,
+        ),
+      };
+      expect(result.width).toBe(170);
+      expect(result.height).toBe(70);
+      expect(corner.includes("w") ? result.x + result.width : result.x).toBe(
+        corner.includes("w") ? shape.x + shape.width : shape.x,
+      );
+      expect(corner.includes("n") ? result.y + result.height : result.y).toBe(
+        corner.includes("n") ? shape.y + shape.height : shape.y,
+      );
+    },
+  );
+
+  it.each<ResizeHandle>(["n", "e", "s", "w"])(
+    "changes only one axis for the %s edge",
+    (handle) => {
+      const delta = {
+        x: handle === "w" ? -40 : 40,
+        y: handle === "n" ? -10 : 10,
+      };
+      const result = {
+        ...shape,
+        ...resizeAnnotation(shape, handle, delta, page),
+      };
+      if (handle === "n" || handle === "s") {
+        expect(result.x).toBe(shape.x);
+        expect(result.width).toBe(shape.width);
+        expect(result.height).toBe(70);
+        expect(handle === "n" ? result.y + result.height : result.y).toBe(
+          handle === "n" ? shape.y + shape.height : shape.y,
+        );
+      } else {
+        expect(result.y).toBe(shape.y);
+        expect(result.height).toBe(shape.height);
+        expect(result.width).toBe(160);
+        expect(handle === "w" ? result.x + result.width : result.x).toBe(
+          handle === "w" ? shape.x + shape.width : shape.x,
+        );
+      }
+    },
+  );
+
+  it.each<ResizeHandle>(["nw", "ne", "sw", "se", "n", "e", "s", "w"])(
+    "constrains %s to the page and does not flip past the opposite edge",
+    (handle) => {
+      const grow = {
+        x: handle.includes("w") ? -10000 : 10000,
+        y: handle.includes("n") ? -10000 : 10000,
+      };
+      for (const delta of [grow, { x: -grow.x, y: -grow.y }]) {
+        const result = {
+          ...shape,
+          ...resizeAnnotation(shape, handle, delta, page),
+        };
+        expect(result.x).toBeGreaterThanOrEqual(0);
+        expect(result.y).toBeGreaterThanOrEqual(0);
+        expect(result.width).toBeGreaterThanOrEqual(8);
+        expect(result.height).toBeGreaterThanOrEqual(8);
+        expect(result.x + result.width).toBeLessThanOrEqual(page.width);
+        expect(result.y + result.height).toBeLessThanOrEqual(page.height);
+      }
     },
   );
 });

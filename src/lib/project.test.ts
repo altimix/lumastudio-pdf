@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 import { decodeProject, encodeProject, type PdfProject } from './project'
+import type { FontFamilyId, ShapeKind } from './types'
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPIYAAAAASUVORK5CYII='
 const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2Q=='
@@ -33,6 +34,12 @@ function decodeRaw(value: unknown) {
 }
 
 describe('editable PDF project', () => {
+  it('writes version 2 so older apps cannot silently discard new styles and still reads version 1', () => {
+    const raw = rawExample()
+    expect(raw.version).toBe(2)
+    raw.version = 1
+    expect(decodeRaw(raw)).toEqual(example())
+  })
   it('round-trips original PDF bytes, page order and rotation, annotation IDs, text, seals and images', async () => {
     const pdf = await PDFDocument.create()
     pdf.addPage([600, 800])
@@ -60,6 +67,28 @@ describe('editable PDF project', () => {
     expect(decodeProject(encodeProject(project)).original).toEqual(original)
   })
 
+  it.each<FontFamilyId>(['legacy', 'noto-sans-jp', 'noto-serif-jp', 'm-plus-1', 'biz-udgothic'])('round-trips %s with bold, italic and underline', fontFamily => {
+    const project = example()
+    Object.assign(project.annotations[0], { fontFamily, fontWeight: 700, fontStyle: 'italic', underline: true })
+    expect(decodeProject(encodeProject(project))).toEqual(project)
+  })
+
+  it('preserves absent typography metadata in older work files', () => {
+    const restored = decodeProject(encodeProject(example()))
+    expect(restored.annotations[0]).not.toHaveProperty('fontFamily')
+    expect(restored.annotations[0]).not.toHaveProperty('fontWeight')
+    expect(restored.annotations[0]).not.toHaveProperty('fontStyle')
+    expect(restored.annotations[0]).not.toHaveProperty('underline')
+  })
+
+  it.each<ShapeKind>(['rectangle', 'ellipse', 'triangle'])('round-trips editable %s geometry, transparent fill and stroke', shapeKind => {
+    const project = example()
+    project.annotations.push({ id: 'shape', pageId: 'page-one', type: 'shape', shapeKind, x: 40, y: 110, width: 130, height: 40, fillColor: 'none', strokeColor: '#f00', strokeWidth: 1.5 })
+    expect(decodeProject(encodeProject(project))).toEqual(project)
+    Object.assign(project.annotations.at(-1)!, { strokeColor: 'none', fillColor: '#00aabb', strokeWidth: 0 })
+    expect(decodeProject(encodeProject(project))).toEqual(project)
+  })
+
   it('only saves allowed document fields and drops unrelated metadata on decode', () => {
     const project = example()
     const extras = {
@@ -84,7 +113,7 @@ describe('editable PDF project', () => {
 
   it.each([
     ['wrong app', (raw: any) => { raw.app = 'another editor' }, /LumaStudio/],
-    ['future version', (raw: any) => { raw.version = 2 }, /バージョン/],
+    ['future version', (raw: any) => { raw.version = 3 }, /バージョン/],
     ['missing version', (raw: any) => { delete raw.version }, /バージョン/],
     ['empty page list', (raw: any) => { raw.pages = [] }, /ページ数/],
     ['too many pages', (raw: any) => { raw.pages = Array(201).fill(raw.pages[0]) }, /ページ数/],
@@ -109,6 +138,18 @@ describe('editable PDF project', () => {
     ['too much text', (raw: any) => { raw.annotations[0].text = '文'.repeat(3001) }, /3000文字/],
     ['font too small', (raw: any) => { raw.annotations[0].fontSize = 5 }, /文字サイズ/],
     ['font too large', (raw: any) => { raw.annotations[0].fontSize = 97 }, /文字サイズ/],
+    ['unknown font', (raw: any) => { raw.annotations[0].fontFamily = 'remote-font' }, /フォント/],
+    ['font CSS injection', (raw: any) => { raw.annotations[0].fontFamily = 'url(https://example.test/font)' }, /フォント/],
+    ['string font weight', (raw: any) => { raw.annotations[0].fontWeight = '700' }, /太さ/],
+    ['unsupported font weight', (raw: any) => { raw.annotations[0].fontWeight = 900 }, /太さ/],
+    ['unsupported font style', (raw: any) => { raw.annotations[0].fontStyle = 'oblique 45deg' }, /スタイル/],
+    ['nonboolean underline', (raw: any) => { raw.annotations[0].underline = 'false' }, /下線/],
+    ['missing shape kind', (raw: any) => { raw.annotations[0].type = 'shape' }, /図形の種類/],
+    ['unsupported shape kind', (raw: any) => { Object.assign(raw.annotations[0], { type: 'shape', shapeKind: 'svg' }) }, /図形の種類/],
+    ['fill CSS injection', (raw: any) => { raw.annotations[0].fillColor = 'url(https://example.test/fill)' }, /塗りつぶしの色/],
+    ['stroke CSS injection', (raw: any) => { raw.annotations[0].strokeColor = 'var(--external)' }, /枠線の色/],
+    ['negative stroke width', (raw: any) => { raw.annotations[0].strokeWidth = -1 }, /枠線の太さ/],
+    ['huge stroke width', (raw: any) => { raw.annotations[0].strokeWidth = 21 }, /枠線の太さ/],
     ['CSS color injection', (raw: any) => { raw.annotations[0].color = 'url(https://example.test/a)' }, /色/],
     ['unknown stamp shape', (raw: any) => { raw.annotations[1].stampShape = 'triangle' }, /印鑑の形/],
     ['missing image', (raw: any) => { delete raw.annotations[2].dataUrl }, /画像/],
