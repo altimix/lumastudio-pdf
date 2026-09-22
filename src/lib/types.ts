@@ -31,4 +31,4 @@ export interface PageInfo {
   viewportTransform?: number[]
 }
 
-export type Tool = 'select' | AnnotationType
+export type Tool = 'select' | 'hand' | AnnotationType
