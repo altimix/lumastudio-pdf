@@ -11,22 +11,41 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Annotation, PageInfo } from "../lib/types";
 import { annotationToDataUrl, renderPdfPage } from "../lib/pdf";
 import {
+  ensureTextFont,
+  fontCssFamily,
+  isTextFontReady,
+  measureTextHeight,
+} from "../lib/fonts";
+import {
   pointOnPage,
   resizeAnnotation,
-  type ResizeCorner,
+  type ResizeHandle,
 } from "../lib/annotation-geometry";
 import "./PdfPage.css";
 
-export function AnnotationVisual({ annotation }: { annotation: Annotation }) {
+export function AnnotationVisual({
+  annotation,
+  onError,
+}: {
+  annotation: Annotation;
+  onError?(message: string): void;
+}) {
   const [url, setUrl] = useState("");
+  const latestError = useRef(onError);
+  latestError.current = onError;
   useEffect(() => {
     let current = true;
     annotationToDataUrl(annotation)
       .then((value) => {
         if (current) setUrl(value);
       })
-      .catch(() => {
-        if (current) setUrl("");
+      .catch((error) => {
+        if (current) {
+          setUrl("");
+          latestError.current?.(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
       });
     return () => {
       current = false;
@@ -93,54 +112,54 @@ type Props = {
   onError(message: string): void;
 };
 
-type InlineDraft = { annotation: Annotation; original: Annotation | null };
+type InlineDraft = {
+  annotation: Annotation;
+  original: Annotation | null;
+  fontReady: boolean;
+  fontError?: boolean;
+};
 type Interaction = {
   annotation: Annotation;
   pointerId: number;
   startX: number;
   startY: number;
-  corner?: ResizeCorner;
+  corner?: ResizeHandle;
 };
-const CORNERS: Array<{ corner: ResizeCorner; label: string }> = [
+const CORNERS: Array<{ corner: ResizeHandle; label: string }> = [
   { corner: "nw", label: "左上" },
   { corner: "ne", label: "右上" },
   { corner: "sw", label: "左下" },
   { corner: "se", label: "右下" },
 ];
-const TEXT_FONT =
-  '"Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif';
+const EDGES: Array<{ corner: ResizeHandle; label: string }> = [
+  { corner: "n", label: "上辺" },
+  { corner: "e", label: "右辺" },
+  { corner: "s", label: "下辺" },
+  { corner: "w", label: "左辺" },
+];
+
+function resizeCursor(handle: ResizeHandle, sideways: boolean): string {
+  if (handle === "n" || handle === "s")
+    return sideways ? "ew-resize" : "ns-resize";
+  if (handle === "e" || handle === "w")
+    return sideways ? "ns-resize" : "ew-resize";
+  return (handle === "nw" || handle === "se") !== sideways
+    ? "nwse-resize"
+    : "nesw-resize";
+}
 
 function textWithHeight(
   annotation: Annotation,
   text: string,
   pageHeight: number,
 ): Annotation {
-  const fontSize = annotation.fontSize || 16;
-  const context = window.document.createElement("canvas").getContext("2d");
-  let lines = 0;
-  if (context) context.font = `400 ${fontSize}px ${TEXT_FONT}`;
-  for (const paragraph of text.split("\n")) {
-    let line = "";
-    lines++;
-    for (const character of Array.from(paragraph)) {
-      if (
-        line &&
-        context &&
-        context.measureText(line + character).width >
-          Math.max(1, annotation.width - 4)
-      ) {
-        lines++;
-        line = character;
-      } else line += character;
-    }
-  }
   return {
     ...annotation,
     text,
     color: annotation.color || "#000000",
     height: Math.min(
       pageHeight - annotation.y,
-      Math.max(annotation.height, lines * fontSize * 1.4 + 6),
+      Math.max(annotation.height, measureTextHeight({ ...annotation, text })),
     ),
   };
 }
@@ -238,24 +257,61 @@ export function PdfPage({
     consumedDraft.current = textDraft.id;
     if (!readOnly && textDraft.pageId === page.id) {
       commitDraft();
+      const fontReady = isTextFontReady(textDraft);
       changeDraft({
-        annotation: textWithHeight(
-          textDraft,
-          textDraft.text || "",
-          page.height,
-        ),
+        annotation: fontReady
+          ? textWithHeight(textDraft, textDraft.text || "", page.height)
+          : textDraft,
         original: null,
+        fontReady,
       });
       clearInteraction();
     }
     onTextDraftConsumed();
   }, [textDraft, readOnly, page.id]);
+  useEffect(() => {
+    const pending = draftRef.current;
+    if (!pending || pending.fontReady) return;
+    let cancelled = false;
+    ensureTextFont(pending.annotation)
+      .then(() => {
+        if (cancelled || draftRef.current !== pending) return;
+        changeDraft({
+          ...pending,
+          annotation: textWithHeight(
+            pending.annotation,
+            pending.annotation.text || "",
+            page.height,
+          ),
+          fontReady: true,
+        });
+      })
+      .catch((error) => {
+        if (cancelled || draftRef.current !== pending) return;
+        changeDraft({ ...pending, fontError: true });
+        onError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    draft?.annotation.id,
+    draft?.annotation.fontFamily,
+    draft?.annotation.fontWeight,
+    draft?.annotation.fontStyle,
+  ]);
   useLayoutEffect(() => {
-    if (!draft || readOnly) return;
+    if (!draft?.fontReady || readOnly) return;
+    if (
+      window.document.querySelector(
+        '[role="dialog"][aria-modal="true"], dialog[open]',
+      )
+    )
+      return;
     const input = textareaRef.current;
     input?.focus({ preventScroll: true });
     input?.setSelectionRange(input.value.length, input.value.length);
-  }, [draft?.annotation.id]);
+  }, [draft?.annotation.id, draft?.fontReady]);
   useLayoutEffect(() => {
     const actions = actionsRef.current;
     if (!actions) return;
@@ -338,6 +394,7 @@ export function PdfPage({
     changeDraft({
       annotation: { ...annotation, color: annotation.color || "#000000" },
       original: annotation,
+      fontReady: isTextFontReady(annotation),
     });
   };
   const moveInteraction = (event: PointerEvent<HTMLElement>) => {
@@ -502,7 +559,7 @@ export function PdfPage({
               key={annotation.id}
               role="button"
               tabIndex={0}
-              aria-label={`${annotation.type === "stamp" ? "印鑑" : annotation.type === "text" ? "文字" : annotation.type === "check" ? "チェック" : "画像"}: ${annotation.text ?? ""}`}
+              aria-label={`${annotation.type === "stamp" ? "印鑑" : annotation.type === "text" ? "文字" : annotation.type === "check" ? "チェック" : annotation.type === "shape" ? "図形" : "画像"}: ${annotation.text ?? ""}`}
               aria-pressed={selectedId === annotation.id}
               className={`annotation ${selectedId === annotation.id && !editing ? "selected" : ""} ${editing ? "editing" : ""}`}
               style={{
@@ -549,12 +606,15 @@ export function PdfPage({
               onPointerCancel={clearInteraction}
               onLostPointerCapture={clearInteraction}
             >
-              <AnnotationVisual annotation={visual} />
+              <AnnotationVisual annotation={visual} onError={onError} />
               {selectedId === annotation.id &&
                 !readOnly &&
                 !editing &&
                 !panning &&
-                CORNERS.map(({ corner, label }) => (
+                (annotation.type === "shape"
+                  ? [...CORNERS, ...EDGES]
+                  : CORNERS
+                ).map(({ corner, label }) => (
                   <button
                     key={corner}
                     type="button"
@@ -563,10 +623,7 @@ export function PdfPage({
                     aria-label={`${label}のサイズ変更`}
                     title={`${label}をドラッグしてサイズ変更`}
                     style={{
-                      cursor:
-                        (corner === "nw" || corner === "se") !== sideways
-                          ? "nwse-resize"
-                          : "nesw-resize",
+                      cursor: resizeCursor(corner, sideways),
                     }}
                     onPointerDown={(event) => {
                       event.stopPropagation();
@@ -655,14 +712,25 @@ export function PdfPage({
               ref={textareaRef}
               aria-label="PDF上の文字入力"
               data-testid="inline-text-input"
-              placeholder="ここに文字を入力"
+              placeholder={
+                draft.fontReady
+                  ? "ここに文字を入力"
+                  : draft.fontError
+                    ? "フォントを読み込めませんでした"
+                    : "フォントを読み込み中…"
+              }
               value={draft.annotation.text || ""}
               spellCheck={false}
               maxLength={3000}
-              disabled={readOnly}
+              disabled={readOnly || !draft.fontReady}
               style={{
-                fontFamily: TEXT_FONT,
+                fontFamily: fontCssFamily(draft.annotation.fontFamily),
                 fontSize: (draft.annotation.fontSize || 16) * scale,
+                fontWeight: draft.annotation.fontWeight || 400,
+                fontStyle: draft.annotation.fontStyle || "normal",
+                textDecoration: draft.annotation.underline
+                  ? "underline"
+                  : "none",
                 lineHeight: 1.4,
                 padding: `${2 * scale}px`,
                 color: draft.annotation.color || "#000000",
@@ -699,7 +767,7 @@ export function PdfPage({
               <button
                 type="button"
                 aria-label="文字入力を確定"
-                disabled={readOnly}
+                disabled={readOnly || !draft.fontReady}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={commitDraft}
               >

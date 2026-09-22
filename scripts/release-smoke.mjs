@@ -47,6 +47,8 @@ try {
   assert.equal(path.resolve(packaged.userData), path.resolve(userData));
   assert.equal(packaged.signPdf, 'function');
   const page = await application.firstWindow({ timeout: 30_000 });
+  const fontRequests = [];
+  page.on('request', (request) => { if (/\.woff2?(?:\?|$)/.test(request.url())) fontRequests.push(request.url()); });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await expect(page.getByRole('button', { name: 'サンプルの書類で試す' })).toBeVisible({ timeout: 30_000 });
@@ -71,9 +73,29 @@ try {
     for (let index = 0; index < data.length; index += 4) if (data[index] < 190) ink += 1;
     return ink > 500;
   });
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('noto-sans-jp');
+  await expect(page.getByRole('spinbutton', { name: '文字サイズ', exact: true })).toHaveValue('11');
+  await page.getByTestId('pdf-surface').click({ position: { x: 150, y: 220 } });
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await input.fill('同梱フォントの確認');
+  await input.press('ControlOrMeta+Enter');
+  await expect(page.getByRole('button', { name: '文字: 同梱フォントの確認', exact: true }).locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  assert.equal(await page.evaluate(() => {
+    const faces = [];
+    document.fonts.forEach((face) => { if (face.family.includes('Noto Sans JP Variable')) faces.push(face); });
+    return faces.length > 0 && faces.every(face => face.status === 'loaded');
+  }), true);
+  assert.ok(fontRequests.length > 0 && fontRequests.every(url => url.startsWith('file:')), 'Fonts must load from the packaged application.');
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.locator('.unsaved')).toHaveCount(0);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
   if (application) await application.close();
 }

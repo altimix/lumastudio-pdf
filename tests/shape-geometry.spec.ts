@@ -1,0 +1,176 @@
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { PDFDocument } from 'pdf-lib';
+
+type Geometry = { x: number; y: number; width: number; height: number };
+type Shape = Geometry & { type: string; shapeKind: string; fillColor: string; strokeColor: string; strokeWidth: number };
+type Project = { annotations: Shape[]; pages: { rotation: number }[] };
+
+async function openFixture(page: Page) {
+  const pdf = await PDFDocument.create();
+  pdf.addPage([500, 700]);
+  await page.goto('/');
+  await page.getByTestId('pdf-input').setInputFiles({ name: 'shapes.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => (element as HTMLCanvasElement).width)).toBeGreaterThan(100);
+}
+
+async function placeShape(page: Page, label: string, x: number, y: number) {
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByLabel('図形の種類', { exact: true }).selectOption({ label });
+  const surface = page.getByTestId('pdf-surface');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await surface.click({ position: { x: x * scale, y: y * scale } });
+  const annotation = page.locator('.annotation.selected');
+  await expect(annotation).toBeVisible();
+  await expect(annotation.locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  return annotation;
+}
+
+async function geometry(annotation: Locator): Promise<Geometry> {
+  return annotation.evaluate(element => {
+    const style = (element as HTMLElement).style;
+    return { x: parseFloat(style.left), y: parseFloat(style.top), width: parseFloat(style.width), height: parseFloat(style.height) };
+  });
+}
+
+async function dragHandle(page: Page, annotation: Locator, handle: string, dx: number, dy: number) {
+  const box = await annotation.getByTestId(`resize-${handle}`).boundingBox();
+  if (!box) throw new Error('Resize handle is missing');
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y + dy, { steps: 6 });
+  await page.mouse.up();
+}
+
+async function saveProject(page: Page, testInfo: TestInfo, filename = 'shapes.lumapdf') {
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '編集の続きを保存・再開', exact: true });
+  const event = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: '作業データを保存', exact: true }).click();
+  const path = testInfo.outputPath(filename);
+  await (await event).saveAs(path);
+  await expect(dialog).not.toBeVisible();
+  return { path, data: JSON.parse(await readFile(path, 'utf8')) as Project };
+}
+
+async function openProject(page: Page, path: string) {
+  await page.reload();
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '編集の続きを保存・再開', exact: true });
+  const chooser = page.waitForEvent('filechooser');
+  await dialog.getByRole('button', { name: '保存した作業データを開く', exact: true }).click();
+  await (await chooser).setFiles(path);
+  await expect(dialog).not.toBeVisible();
+}
+
+test.beforeEach(async ({ context }) => {
+  await context.route('**/api/autofill', route => route.abort());
+  await context.route('https://api.openai.com/**', route => route.abort());
+});
+
+test('図形を四隅・四辺から自由に変形し、回転後も一操作のUndoと作業データ再開が一致する', async ({ page }, testInfo) => {
+  await openFixture(page);
+  const annotation = await placeShape(page, '長方形', 80, 140);
+  await expect(annotation.locator('.annotation-resize-handle')).toHaveCount(8);
+  const initial = await geometry(annotation);
+  const scale = initial.width / 120;
+  expect(initial.height / scale).toBeCloseTo(80, 1);
+  await dragHandle(page, annotation, 'se', 60 * scale, 10 * scale);
+  const stretched = await geometry(annotation);
+  expect(stretched.width / scale).toBeCloseTo(180, 0);
+  expect(stretched.height / scale).toBeCloseTo(90, 0);
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  const shape = page.locator('.annotation');
+  expect(await geometry(shape)).toEqual(initial);
+  await page.getByRole('button', { name: 'やり直す', exact: true }).click();
+  await shape.click();
+  await dragHandle(page, shape, 'e', 40 * scale, -30 * scale);
+  const edge = await geometry(shape);
+  expect(edge.width / scale).toBeCloseTo(220, 0);
+  expect(edge.height).toBeCloseTo(stretched.height, 1);
+  expect(edge.y).toBeCloseTo(stretched.y, 1);
+  await page.getByRole('button', { name: '選択・移動', exact: true }).click();
+  await page.getByRole('button', { name: 'ページを右に回転', exact: true }).click();
+  await shape.click();
+  await expect(shape.getByTestId('resize-s')).toHaveCSS('cursor', 'ew-resize');
+  // In a clockwise-rotated page, dragging left stretches its original height.
+  await dragHandle(page, shape, 's', -30 * scale, 18 * scale);
+  const rotated = await geometry(shape);
+  expect(rotated.width).toBeCloseTo(edge.width, 1);
+  expect(rotated.height / scale).toBeCloseTo(120, 0);
+  const saved = await saveProject(page, testInfo);
+  expect(saved.data.pages[0].rotation).toBe(90);
+  expect(saved.data.annotations[0]).toMatchObject({ type: 'shape', shapeKind: 'rectangle', fillColor: 'none' });
+  expect(saved.data.annotations[0].width).toBeCloseTo(220, 0);
+  expect(saved.data.annotations[0].height).toBeCloseTo(120, 0);
+  await openProject(page, saved.path);
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  await page.locator('.annotation').click();
+  await expect(page.locator('.annotation-resize-handle')).toHaveCount(8);
+  const reopened = await saveProject(page, testInfo, 'shapes-reopened.lumapdf');
+  expect(reopened.data.annotations[0]).toMatchObject({ width: saved.data.annotations[0].width, height: saved.data.annotations[0].height, shapeKind: 'rectangle' });
+  await page.screenshot({ path: testInfo.outputPath('rotated-shape-resize.png'), fullPage: true });
+});
+
+test('長方形・楕円・三角形の枠線と塗りつぶしを指定し、PDF出力にも色と透明部分を残す', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await openFixture(page);
+  await placeShape(page, '長方形', 80, 120);
+  await page.getByLabel('塗りつぶし', { exact: true }).check();
+  await page.getByLabel('塗りつぶしの色', { exact: true }).fill('#ff0000');
+  await page.getByLabel('枠線の色', { exact: true }).fill('#0000ff');
+  await page.getByRole('spinbutton', { name: '枠線の太さ', exact: true }).fill('6');
+  await page.getByRole('spinbutton', { name: '枠線の太さ', exact: true }).press('Enter');
+
+  await placeShape(page, '楕円・円', 80, 280);
+  await page.getByLabel('塗りつぶし', { exact: true }).uncheck();
+  await page.getByLabel('枠線を表示', { exact: true }).check();
+  await page.getByLabel('枠線の色', { exact: true }).fill('#00aa00');
+  await page.getByRole('spinbutton', { name: '枠線の太さ', exact: true }).fill('6');
+  await page.getByRole('spinbutton', { name: '枠線の太さ', exact: true }).press('Enter');
+
+  await placeShape(page, '三角形', 280, 280);
+  await page.getByLabel('塗りつぶし', { exact: true }).check();
+  await page.getByLabel('塗りつぶしの色', { exact: true }).fill('#0000ff');
+  await page.getByLabel('枠線を表示', { exact: true }).uncheck();
+  const saved = await saveProject(page, testInfo);
+  expect(saved.data.annotations.map(shape => [shape.shapeKind, shape.fillColor, shape.strokeColor])).toEqual([
+    ['rectangle', '#ff0000', '#0000ff'], ['ellipse', 'none', '#00aa00'], ['triangle', '#0000ff', 'none'],
+  ]);
+  await openProject(page, saved.path);
+  await expect(page.locator('.annotation')).toHaveCount(3);
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const path = testInfo.outputPath('colored-shapes.pdf');
+  await (await event).saveAs(path);
+  const document = await PDFDocument.load(await readFile(path));
+  expect(document.getPageCount()).toBe(1);
+  await page.getByTestId('pdf-input').setInputFiles(path);
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  const samples = [
+    { x: 140, y: 160, expected: 'red' },
+    { x: 140, y: 122, expected: 'blue' },
+    { x: 130, y: 330, expected: 'white' },
+    { x: 178, y: 330, expected: 'green' },
+    { x: 81, y: 281, expected: 'white' },
+    { x: 330, y: 335, expected: 'blue' },
+    { x: 283, y: 283, expected: 'white' },
+  ];
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate((element, points) => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext('2d')!;
+    return points.map(point => {
+      const [r, g, b] = context.getImageData(Math.round(point.x * canvas.width / 500), Math.round(point.y * canvas.height / 700), 1, 1).data;
+      if (r > 230 && g > 230 && b > 230) return 'white';
+      if (r > 180 && g < 80 && b < 80) return 'red';
+      if (b > 180 && r < 80 && g < 80) return 'blue';
+      if (g > 100 && r < 80 && b < 80) return 'green';
+      return `${r},${g},${b}`;
+    });
+  }, samples)).toEqual(samples.map(point => point.expected));
+  await page.screenshot({ path: testInfo.outputPath('exported-shapes.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});

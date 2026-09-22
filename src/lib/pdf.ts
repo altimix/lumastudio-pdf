@@ -3,10 +3,11 @@ import type { PDFObject } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { Annotation, PageInfo } from './types'
+import { ensureTextFont, fontCssFamily, textFontCss, underlineOffset, wrapTextLines } from './fonts'
 
 export type { Annotation, PageInfo } from './types'
 
-const FONT = '"Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif'
+const FONT = fontCssFamily('legacy')
 const SEAL_FONT = '"Yu Mincho", "Hiragino Mincho ProN", "MS Mincho", serif'
 const rendering = new WeakMap<HTMLCanvasElement, { cancel(): void; promise: Promise<void> }>()
 const renderRequests = new WeakMap<HTMLCanvasElement, symbol>()
@@ -124,32 +125,47 @@ function makeCanvas(width: number, height: number, resolution = 3): { canvas: HT
   return { canvas, context }
 }
 
-function wrapLines(context: CanvasRenderingContext2D, text: string, width: number): string[] {
-  return text.split('\n').flatMap((paragraph) => {
-    const lines: string[] = []
-    let line = ''
-    for (const character of Array.from(paragraph)) {
-      if (line && context.measureText(line + character).width > width) {
-        lines.push(line)
-        line = character
-      } else line += character
-    }
-    lines.push(line)
-    return lines
-  })
-}
-
 /** Uses the same raster for preview and export, keeping Japanese glyphs identical. */
 export async function annotationToDataUrl(annotation: Annotation): Promise<string> {
   if (annotation.type === 'image' && annotation.dataUrl) return annotation.dataUrl
   const { width, height } = annotation
   if (!(width > 0 && height > 0)) throw new Error('追加する要素のサイズが不正です。')
-  if (document.fonts) await document.fonts.ready
+  if (annotation.type === 'text') await ensureTextFont(annotation)
+  else if (document.fonts) await document.fonts.ready
   const { canvas, context } = makeCanvas(width, height)
   const color = annotation.color || (annotation.type === 'stamp' ? '#b82e2b' : '#000000')
   context.fillStyle = color
   context.strokeStyle = color
-  if (annotation.type === 'stamp') {
+  if (annotation.type === 'shape') {
+    const strokeColor = annotation.strokeColor ?? '#000000'
+    const fillColor = annotation.fillColor ?? 'none'
+    const requestedStroke = annotation.strokeWidth ?? 1.5
+    const strokeWidth = strokeColor === 'none' ? 0 : Math.min(Math.max(0, requestedStroke), 20, width, height)
+    const inset = strokeWidth / 2
+    context.beginPath()
+    if (annotation.shapeKind === 'ellipse') {
+      context.ellipse(width / 2, height / 2, Math.max(0, width / 2 - inset), Math.max(0, height / 2 - inset), 0, 0, Math.PI * 2)
+    } else if (annotation.shapeKind === 'triangle') {
+      context.moveTo(width / 2, inset)
+      context.lineTo(width - inset, height - inset)
+      context.lineTo(inset, height - inset)
+      context.closePath()
+    } else {
+      context.rect(inset, inset, Math.max(0, width - inset * 2), Math.max(0, height - inset * 2))
+    }
+    if (fillColor !== 'none') {
+      context.fillStyle = fillColor
+      context.fill()
+    }
+    if (strokeWidth > 0) {
+      context.strokeStyle = strokeColor
+      context.lineWidth = strokeWidth
+      // Rounded joins keep a triangle's apex within its resize box, even when
+      // the outline is wider than the shape's short side.
+      context.lineJoin = 'round'
+      context.stroke()
+    }
+  } else if (annotation.type === 'stamp') {
     const size = Math.min(width, height)
     const inset = Math.max(2, size * 0.045)
     context.lineWidth = Math.max(1.4, size * 0.035)
@@ -189,10 +205,19 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
     context.stroke()
   } else {
     const fontSize = annotation.fontSize || 16
-    context.font = `400 ${fontSize}px ${FONT}`
+    context.font = textFontCss(annotation)
     context.textBaseline = 'top'
-    wrapLines(context, annotation.text || '', Math.max(1, width - 4)).forEach((line, index) => {
-      context.fillText(line, 2, 2 + index * fontSize * 1.4)
+    wrapTextLines(context, annotation.text || '', Math.max(1, width - 4)).forEach((line, index) => {
+      const y = 2 + index * fontSize * 1.4
+      context.fillText(line, 2, y)
+      if (annotation.underline && line) {
+        context.lineWidth = Math.max(0.6, fontSize / 16)
+        const underlineY = y + underlineOffset(context, line, fontSize)
+        context.beginPath()
+        context.moveTo(2, underlineY)
+        context.lineTo(Math.min(width - 2, 2 + context.measureText(line).width), underlineY)
+        context.stroke()
+      }
     })
   }
   return canvas.toDataURL('image/png')
