@@ -82,17 +82,129 @@ describe("corner resize", () => {
     expect(result.y + result.height).toBe(260);
   });
 
-  it("scales text glyphs and box together and enforces the font limits", () => {
+  it("scales text content and font while preserving fixed padding and font limits", () => {
     const text = { ...annotation, type: "text" as const, fontSize: 12 };
-    expect(resizeAnnotation(text, "se", { x: 120, y: 60 }, page)).toMatchObject(
-      { width: 240, height: 120, fontSize: 24 },
+    expect(resizeAnnotation(text, "se", { x: 116, y: 54 }, page)).toMatchObject(
+      { width: 236, height: 114, fontSize: 24 },
     );
     expect(
       resizeAnnotation(text, "se", { x: -10000, y: -10000 }, page),
-    ).toMatchObject({ width: 60, height: 30, fontSize: 6 });
+    ).toMatchObject({ width: 62, height: 33, fontSize: 6 });
     const smallText = { ...text, x: 0, y: 0, width: 12, height: 12 };
     expect(
       resizeAnnotation(smallText, "se", { x: 10000, y: 10000 }, page).fontSize,
     ).toBe(96);
+  });
+
+  it("keeps eighteen Japanese glyphs on one line when a 240pt text box shrinks", () => {
+    const text = {
+      ...annotation,
+      type: "text" as const,
+      width: 240,
+      height: 24.2,
+      fontSize: 13,
+      text: "あ".repeat(18),
+    };
+    const result = {
+      ...text,
+      ...resizeAnnotation(text, "se", { x: -120, y: -12.1 }, page),
+    };
+    // Full-width glyphs need one em each. Previously a 120pt box had only
+    // 116pt for 117pt of text, moving the final glyph to a clipped second line.
+    expect(result.width - 4).toBeGreaterThanOrEqual(18 * result.fontSize);
+    expect(result.height - 6).toBeCloseTo(result.fontSize * 1.4, 10);
+    expect(result.fontSize).toBeGreaterThanOrEqual(6);
+    expect((result.width - 4) / (text.width - 4)).toBeCloseTo(
+      result.fontSize / text.fontSize,
+      10,
+    );
+  });
+
+  it.each<ResizeCorner>(["nw", "ne", "sw", "se"])(
+    "anchors text's opposite %s corner and does not jump at zero delta",
+    (corner) => {
+      const text = {
+        ...annotation,
+        type: "text" as const,
+        fontSize: 13,
+        width: 240,
+        height: 24.2,
+      };
+      const zero = {
+        ...text,
+        ...resizeAnnotation(text, corner, { x: 0, y: 0 }, page),
+      };
+      expect(zero).toEqual(text);
+      const delta = {
+        x: corner.includes("w") ? 118 : -118,
+        y: corner.includes("n") ? 9.1 : -9.1,
+      };
+      const result = {
+        ...text,
+        ...resizeAnnotation(text, corner, delta, page),
+      };
+      expect(result.width).toBe(122);
+      expect(result.height).toBe(15.1);
+      expect(result.fontSize).toBe(6.5);
+      expect(corner.includes("w") ? result.x + result.width : result.x).toBe(
+        corner.includes("w") ? text.x + text.width : text.x,
+      );
+      expect(corner.includes("n") ? result.y + result.height : result.y).toBe(
+        corner.includes("n") ? text.y + text.height : text.y,
+      );
+    },
+  );
+
+  it.each<ResizeCorner>(["nw", "ne", "sw", "se"])(
+    "constrains text growth at the page edge from %s",
+    (corner) => {
+      const text = {
+        ...annotation,
+        type: "text" as const,
+        fontSize: 13,
+        x: 15,
+        y: 20,
+        width: 240,
+        height: 42.4,
+      };
+      const delta = {
+        x: corner.includes("w") ? -10000 : 10000,
+        y: corner.includes("n") ? -10000 : 10000,
+      };
+      const result = {
+        ...text,
+        ...resizeAnnotation(text, corner, delta, page),
+      };
+      expect(result.x).toBeGreaterThanOrEqual(0);
+      expect(result.y).toBeGreaterThanOrEqual(0);
+      expect(result.x + result.width).toBeLessThanOrEqual(page.width);
+      expect(result.y + result.height).toBeLessThanOrEqual(page.height);
+      expect((result.width - 4) / (text.width - 4)).toBeCloseTo(
+        result.fontSize / text.fontSize,
+        10,
+      );
+      expect((result.height - 6) / (text.height - 6)).toBeCloseTo(
+        result.fontSize / text.fontSize,
+        10,
+      );
+      expect(result.fontSize).toBeLessThanOrEqual(96);
+    },
+  );
+
+  it("can enlarge older text boxes whose size is no bigger than their padding", () => {
+    const text = {
+      ...annotation,
+      type: "text" as const,
+      width: 4,
+      height: 6,
+      fontSize: 6,
+    };
+    const result = {
+      ...text,
+      ...resizeAnnotation(text, "se", { x: 5, y: 5 }, page),
+    };
+    expect(result.width).toBe(8);
+    expect(result.height).toBe(12);
+    expect(result.fontSize).toBe(12);
   });
 });

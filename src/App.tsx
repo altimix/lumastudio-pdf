@@ -249,16 +249,19 @@ export default function App() {
     )
       return current;
     const exists = current.annotations.some((a) => a.id === annotation.id);
+    const cleared = !annotation.text?.trim();
     const next = {
       ...current,
-      annotations: exists
-        ? current.annotations.map((a) =>
-            a.id === annotation.id ? annotation : a,
-          )
-        : [...current.annotations, annotation],
+      annotations: cleared
+        ? current.annotations.filter((a) => a.id !== annotation.id)
+        : exists
+          ? current.annotations.map((a) =>
+              a.id === annotation.id ? annotation : a,
+            )
+          : [...current.annotations, annotation],
     };
     commit(next);
-    setSelectedId(annotation.id);
+    setSelectedId(cleared ? null : annotation.id);
     return next;
   };
   const flushInlineText = () => {
@@ -1751,7 +1754,9 @@ export default function App() {
                         min={6}
                         max={96}
                         step={0.1}
-                        value={Math.round((selected.fontSize ?? 13) * 100) / 100}
+                        value={
+                          Math.round((selected.fontSize ?? 13) * 100) / 100
+                        }
                         onChange={(e) =>
                           updateSelected({
                             fontSize: Math.max(

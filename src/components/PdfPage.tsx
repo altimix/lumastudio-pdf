@@ -207,7 +207,7 @@ export function PdfPage({
     composing.current = false;
     if (
       readOnly ||
-      !pending.annotation.text?.trim() ||
+      (!pending.original && !pending.annotation.text?.trim()) ||
       pending.annotation.pageId !== page.id
     )
       return null;

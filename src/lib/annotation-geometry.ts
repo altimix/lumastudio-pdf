@@ -30,31 +30,42 @@ export function resizeAnnotation(
   const north = corner.includes("n");
   const anchorX = west ? annotation.x + annotation.width : annotation.x;
   const anchorY = north ? annotation.y + annotation.height : annotation.y;
-  const requestedWidth = annotation.width + (west ? -delta.x : delta.x);
-  const requestedHeight = annotation.height + (north ? -delta.y : delta.y);
-  // Project onto the original diagonal so either axis can control a corner.
+  // Text rendering keeps 2pt at each side and 6pt of total vertical padding.
+  // Scale its content area with the font, otherwise shrinking adds wrapped
+  // lines while making the box too short to show those lines.
+  // Older work files can contain boxes smaller than their padding. Retain a
+  // positive diagonal for those boxes so enlarging them cannot produce NaN.
+  const paddingWidth =
+    annotation.type === "text" && annotation.width > 4 ? 4 : 0;
+  const paddingHeight =
+    annotation.type === "text" && annotation.height > 6 ? 6 : 0;
+  const contentWidth = annotation.width - paddingWidth;
+  const contentHeight = annotation.height - paddingHeight;
+  const requestedWidth = contentWidth + (west ? -delta.x : delta.x);
+  const requestedHeight = contentHeight + (north ? -delta.y : delta.y);
+  // Project onto the content diagonal so either axis can control a corner.
   const requestedFactor =
-    (requestedWidth * annotation.width + requestedHeight * annotation.height) /
-    (annotation.width ** 2 + annotation.height ** 2);
+    (requestedWidth * contentWidth + requestedHeight * contentHeight) /
+    (contentWidth ** 2 + contentHeight ** 2);
   const roomX = west ? anchorX : page.width - anchorX;
   const roomY = north ? anchorY : page.height - anchorY;
   const fontSize = annotation.fontSize || 16;
   const minimum = Math.max(
-    8 / annotation.width,
-    8 / annotation.height,
+    (8 - paddingWidth) / contentWidth,
+    (8 - paddingHeight) / contentHeight,
     annotation.type === "text" ? 6 / fontSize : 0,
   );
   const maximum = Math.min(
-    roomX / annotation.width,
-    roomY / annotation.height,
+    (roomX - paddingWidth) / contentWidth,
+    (roomY - paddingHeight) / contentHeight,
     annotation.type === "text" ? 96 / fontSize : Infinity,
   );
   const factor = Math.min(
     maximum,
     Math.max(Math.min(minimum, maximum), requestedFactor),
   );
-  const width = annotation.width * factor;
-  const height = annotation.height * factor;
+  const width = paddingWidth + contentWidth * factor;
+  const height = paddingHeight + contentHeight * factor;
   return {
     x: west ? anchorX - width : anchorX,
     y: north ? anchorY - height : anchorY,

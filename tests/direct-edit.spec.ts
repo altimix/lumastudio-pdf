@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { PDFDocument, PDFHexString, PDFName, PDFString } from 'pdf-lib';
+import { decodePDFRawStream, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFString } from 'pdf-lib';
 
 interface SavedAnnotation {
   type: string; text?: string; color?: string; fontSize?: number;
@@ -169,6 +169,97 @@ test('入力途中の保存でも文字を落とさず、新しい空欄の取�
     for (let index = 0; index < data.length; index += 4) if (data[index] < 190 && data[index + 3] > 200) ink++;
     return ink;
   })).toBeGreaterThan(100);
+});
+
+test('既存文字を空にして確定・保存すると削除され、Undoで戻り、Escapeなら元の文字を保つ', async ({ page }, testInfo) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await placeAt(page, 70, 120);
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  // Completing a brand new empty draft is not an edit.
+  await page.getByRole('button', { name: '文字入力を確定', exact: true }).click();
+  await expect(input).not.toBeVisible();
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await placeAt(page, 70, 120);
+  await input.fill('消去と取消を区別する');
+  await input.press('ControlOrMeta+Enter');
+  const annotation = page.getByRole('button', { name: '文字: 消去と取消を区別する', exact: true });
+  await annotation.dblclick();
+  await input.fill('');
+  await input.press('Escape');
+  await expect(annotation).toBeVisible();
+  await annotation.dblclick();
+  await input.fill('');
+  await page.getByRole('button', { name: '文字入力を確定', exact: true }).click();
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(annotation).toBeVisible();
+  await annotation.dblclick();
+  await input.fill('');
+  const downloaded = page.waitForEvent('download');
+  await input.press('ControlOrMeta+s');
+  const path = testInfo.outputPath('cleared-text.pdf');
+  await (await downloaded).saveAs(path);
+  await expect(input).not.toBeVisible();
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  const saved = await PDFDocument.load(await readFile(path));
+  expect(saved.getPage(0).node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict)?.entries() ?? []).toHaveLength(0);
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(annotation).toBeVisible();
+});
+
+test('長い日本語を半分に縮小しても末尾の文字を欠かさずPDFに保存できる', async ({ page }, testInfo) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await placeAt(page, 70, 150);
+  const text = 'あ'.repeat(18);
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await input.fill(text);
+  await input.press('ControlOrMeta+Enter');
+  const annotation = page.getByRole('button', { name: `文字: ${text}`, exact: true });
+  const before = await dimensions(annotation);
+  expect(before.width / 0.85).toBeCloseTo(240, 1);
+  const handle = (await annotation.getByTestId('resize-se').boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 - before.width / 2, handle.y + handle.height / 2 - before.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await dimensions(annotation)).width).toBeLessThan(before.width * 0.6);
+  const project = await saveProject(page, testInfo);
+  const resized = project.data.annotations[0];
+  expect(resized.text).toBe(text);
+  expect(resized.fontSize).toBeLessThan(7);
+  const advance = await page.evaluate(size => {
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.font = `400 ${size}px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif`;
+    return context.measureText('あ').width;
+  }, resized.fontSize!);
+  // The complete first line must fit between the fixed left/right padding.
+  expect(advance * 18).toBeLessThanOrEqual(resized.width - 4 + 0.1);
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const path = testInfo.outputPath('small-japanese-complete.pdf');
+  await (await downloaded).saveAs(path);
+  const saved = await PDFDocument.load(await readFile(path));
+  const images = saved.getPage(0).node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+  const raster = saved.context.lookup(images.entries()[0][1], PDFRawStream);
+  const mask = raster.dict.lookup(PDFName.of('SMask'), PDFRawStream);
+  const width = mask.dict.lookup(PDFName.of('Width'), PDFNumber).asNumber();
+  const height = mask.dict.lookup(PDFName.of('Height'), PDFNumber).asNumber();
+  const alpha = decodePDFRawStream(mask).decode();
+  expect(alpha.length).toBe(width * height);
+  const scaleX = width / resized.width, scaleY = height / resized.height;
+  const left = Math.ceil((2 + advance * 17) * scaleX);
+  const right = Math.min(width, Math.floor((2 + advance * 18) * scaleX));
+  const top = Math.floor(2 * scaleY), bottom = Math.min(height, Math.ceil((2 + resized.fontSize!) * scaleY));
+  let lastGlyphInk = 0;
+  for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) if (alpha[y * width + x] > 20) lastGlyphInk++;
+  // Inspect the actual embedded alpha mask, at the final glyph's first-line
+  // position. The old resize wrapped this glyph below the clipped image.
+  expect(lastGlyphInk).toBeGreaterThan(10);
+  await page.screenshot({ path: testInfo.outputPath('small-japanese-complete.png'), fullPage: true });
 });
 
 test('文字を角から拡大して一度で元に戻せ、矢印キーで微調整した状態を再開できる', async ({ page }, testInfo) => {
