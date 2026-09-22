@@ -375,12 +375,16 @@ if (!app.requestSingleInstanceLock()) {
     aiService = aiSettings;
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
-    printInbox = path.join(app.getPath('documents'), 'LumaStudio PDF', 'Print Inbox');
-    await fs.mkdir(printInbox, { recursive: true });
+    printInbox = require('./inbox-path.cjs').getPrintInboxPath(app.getPath('documents'),process.env.LUMA_PRINT_INBOX);
     registerIpc();
     createWindow();
     setMenu();
-    inboxWatcher = watchPrintInbox(printInbox, enqueuePdf);
+    try {
+      await fs.mkdir(printInbox, { recursive: true });
+      inboxWatcher = watchPrintInbox(printInbox, enqueuePdf);
+    } catch {
+      dialog.showErrorBox('印刷受信箱を利用できません', '印刷受信箱へのアクセス権を確認してください。通常のPDF編集・保存は利用できます。');
+    }
     for (const filePath of pendingPaths.splice(0)) await openFilePath(filePath);
   }).catch((error) => { dialog.showErrorBox('起動できませんでした', error.message); app.quit(); });
   app.on('activate', () => focusMain());

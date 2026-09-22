@@ -33,7 +33,8 @@ test('requires all expected installers and detects changed downloaded packages',
       await writeFile(path.join(directory, filename), `test-only Mac asset ${filename}`);
     }
     const combined = await assetManifest(directory, '0.1.0', 'all');
-    assert.equal(combined.trim().split('\n').length, 6);
+    assert.equal(combined.trim().split('\n').length, 7);
+    assert.match(combined, /^[a-f0-9]{64}  README-Mac\.txt$/m);
     assert.match(combined, /^[a-f0-9]{64}  LumaStudio-PDF-/);
     await writeFile(path.join(directory, expectedAssets('0.1.0', 'windows')[0]), 'changed');
     await assert.rejects(assetManifest(directory, '0.1.0', 'all'), /チェックサム/);

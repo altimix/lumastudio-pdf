@@ -6,6 +6,8 @@
 
 [GitHub Releases](https://github.com/altimix/lumastudio-pdf/releases) の試用版から、Windows用インストーラーまたはMac用DMGを選びます。Windowsのポータブル版と、MacのIntel／Apple Silicon向けZIPも用意します。配布版を使う場合はNode.jsは不要です。
 
+Mac版はDeveloper ID署名・Apple公証を使わず、整合性確認用のアドホック署名を付けて配布します。開発元を確認できない警告が出た場合は、配布元を確認してから **システム設定 → プライバシーとセキュリティ → LumaStudio PDF の「このまま開く」** でアプリを個別に許可します。初回の詳しい手順は、DMG・ZIPとReleaseに同梱する [Mac版の起動案内](README-Mac.txt) を参照してください。許可画面の表示や起動は、端末の管理設定にも依存します。[Apple公式の説明](https://support.apple.com/ja-jp/guide/mac-help/mh40616/mac)
+
 証明書をまだ持っていない場合は、アプリ上部の **証明書ガイド** または「署名して保存」内の **証明書を持っていない方へ** を開いてください。取得先への確認、個人／会社の公式窓口、必要な形式、入手後の読み込みまで案内します。証明書がなくても通常の編集と印影の配置は利用できます。
 
 ## 開発環境で起動

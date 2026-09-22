@@ -19,13 +19,14 @@ export function expectedAssets(version, platform) {
   const prefix = `LumaStudio-PDF-${version}`;
   const windows = [`${prefix}-windows-x64-setup.exe`, `${prefix}-windows-x64-portable.exe`];
   const macos = ['x64', 'arm64'].flatMap((arch) => ['dmg', 'zip'].map((ext) => `${prefix}-macos-${arch}.${ext}`));
+  macos.push('README-Mac.txt');
   return (platform === 'all' ? [...windows, ...macos] : platform === 'windows' ? windows : macos).sort();
 }
 
 export async function assetManifest(directory, version, platform) {
   const expected = expectedAssets(version, platform);
   const found = (await readdir(directory, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && /\.(?:exe|dmg|zip)$/i.test(entry.name))
+    .filter((entry) => entry.isFile() && (/\.(?:exe|dmg|zip)$/i.test(entry.name) || entry.name === 'README-Mac.txt'))
     .map((entry) => entry.name).sort();
   assert.deepEqual(found, expected, '配布ファイルが不足しているか、予期しない名前・バージョンのファイルが含まれています。');
   const lines = [];
@@ -58,7 +59,7 @@ async function main() {
     const manifest = await assetManifest(directory, pkg.version, value);
     const filename = value === 'all' ? 'SHA256SUMS.txt' : `SHA256SUMS-${value}.txt`;
     await writeFile(path.join(directory, filename), manifest, 'utf8');
-    console.log(`Verified ${expectedAssets(pkg.version, value).length} packages; wrote ${filename}.`);
+    console.log(`Verified ${expectedAssets(pkg.version, value).length} release files; wrote ${filename}.`);
   } else {
     throw new Error('Usage: node scripts/release-check.mjs version [tag] | assets windows|macos|all [directory]');
   }

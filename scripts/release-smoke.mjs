@@ -3,8 +3,9 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { _electron } from '@playwright/test';
+import { _electron } from 'playwright';
 import { expect } from '@playwright/test';
+import { extractFile } from '@electron/asar';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 assert.ok(['win32', 'darwin'].includes(process.platform), 'Run packaged smoke on Windows or macOS.');
@@ -17,9 +18,20 @@ const executable = process.platform === 'win32'
   ? path.join(repo, 'release', 'win-unpacked', 'LumaStudio PDF.exe')
   : path.join(repo, 'release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'LumaStudio PDF.app', 'Contents', 'MacOS', 'LumaStudio PDF');
 await fs.access(executable);
+const archive = process.platform === 'win32'
+  ? path.join(path.dirname(executable), 'resources', 'app.asar')
+  : path.join(path.dirname(executable), '..', 'Resources', 'app.asar');
+// Reject stale builds before starting Electron or its print-inbox watcher.
+for (const source of ['electron/main.cjs', 'electron/preload.cjs', 'electron/inbox-path.cjs', 'server/settings.cjs', 'dist/index.html']) {
+  const current = await fs.readFile(path.join(repo, source));
+  const bundled = extractFile(archive, path.normalize(source));
+  assert.ok(current.equals(bundled), `配布アプリが古いため起動しません。再ビルド・再パッケージしてください: ${source}`);
+}
 await fs.mkdir(path.join(repo, 'tmp'), { recursive: true });
 const userData = await fs.mkdtemp(path.join(repo, 'tmp', 'release-user-data-'));
-const env = { ...process.env, LUMA_ENV_PATH: path.join(userData, 'no-api-key.env') };
+const printInbox = path.join(userData, 'print-inbox');
+await fs.mkdir(printInbox);
+const env = { ...process.env, LUMA_ENV_PATH: path.join(userData, 'no-api-key.env'), LUMA_PRINT_INBOX: printInbox };
 for (const key of ['ELECTRON_RUN_AS_NODE', 'VITE_DEV_SERVER_URL', 'OPENAI_API_KEY']) delete env[key];
 let application;
 const errors = [];
@@ -42,10 +54,12 @@ try {
     rendererNode: typeof window.require,
     signAndSavePdf: typeof window.lumaDesktop?.signAndSavePdf,
     aiAvailable: (await window.lumaDesktop.getAiStatus()).available,
+    printInbox: await window.lumaDesktop.getPrintInbox(),
   }));
   assert.equal(bridge.rendererNode, 'undefined');
   assert.equal(bridge.signAndSavePdf, 'function');
   assert.equal(bridge.aiAvailable, false);
+  assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
   await page.getByRole('button', { name: 'サンプルの書類で試す' }).click();
   await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.busy-indicator')).toHaveCount(0);
