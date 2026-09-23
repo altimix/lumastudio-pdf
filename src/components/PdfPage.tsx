@@ -630,7 +630,7 @@ export function PdfPage({
                 !readOnly &&
                 !editing &&
                 !panning &&
-                (annotation.type === "shape" || !isAspectLocked(annotation)
+                (!isAspectLocked(annotation)
                   ? [...CORNERS, ...EDGES]
                   : CORNERS
                 ).map(({ corner, label }) => (

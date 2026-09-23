@@ -210,6 +210,15 @@ test('図形は丸を初期選択し、線と二重線をクリック中心に�
   const surface = page.getByTestId('pdf-surface');
   const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
   await surface.click({ position: { x: 250 * scale, y: 180 * scale } });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(4);
+  await expect(page.getByTestId('resize-e')).toHaveCount(0);
+  await lock.click();
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
   await placeShape(page, '線', 250, 300);
   await expect(page.getByLabel('塗りつぶし', { exact: true })).toHaveCount(0);
   await placeShape(page, '二重線（取消線）', 250, 370);
