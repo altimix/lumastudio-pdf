@@ -28,6 +28,7 @@ async function writeText(page: Page, value: string) {
   await page.getByRole('button', { name: '文字を記入', exact: true }).click();
   await page.getByLabel('記入する文字').fill(value);
   await page.getByTestId('pdf-surface').click({ position: { x: 65, y: 115 } });
+  await expect(page.locator('.busy-indicator')).toHaveCount(0, { timeout: 30_000 });
   await expect(page.getByRole('button', { name: `文字: ${value}`, exact: true })).toBeVisible();
 }
 

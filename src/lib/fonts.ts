@@ -85,7 +85,18 @@ export async function ensureTextFont(annotation: TextStyle & Pick<Annotation, 't
         if (face.family.replace(/^["']|["']$/g, '') === family) faces.push(face)
       })
       if (!faces.length) throw new Error('同梱フォントが見つかりません。アプリを再起動してください。')
-      await Promise.all(faces.map((face) => face.load()))
+      // Keep font decoding and local HTTP/file I/O bounded. Dispatching every
+      // CJK subset at once can starve the renderer and PDF worker on slow hosts.
+      let next = 0
+      let failed = false
+      const loadNext = async () => {
+        while (!failed && next < faces.length) {
+          const face = faces[next++]
+          try { await face.load() }
+          catch (error) { failed = true; throw error }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(6, faces.length) }, loadNext))
       const ready = loadedFamilies.get(fonts) || new Set<string>()
       ready.add(family)
       loadedFamilies.set(fonts, ready)

@@ -53,6 +53,22 @@ describe('bundled text fonts', () => {
     expect(isTextFontReady(text)).toBe(true)
   })
 
+  it('bounds concurrent subset loads while still waiting for the complete family', async () => {
+    let active = 0, peak = 0, completed = 0
+    const faces = Array.from({ length: 40 }, () => ({ family: 'Noto Sans JP Variable', load: async () => {
+      active++; peak = Math.max(peak, active)
+      await new Promise(resolve => setTimeout(resolve, 1))
+      active--; completed++
+    } }))
+    const fonts = { forEach: (visit: (face: unknown) => void) => faces.forEach(visit), load: vi.fn(async () => []) }
+    vi.stubGlobal('document', { fonts })
+    await Promise.all([ensureTextFont({ fontFamily: 'noto-sans-jp' }), ensureTextFont({ fontFamily: 'noto-sans-jp', text: '住所' })])
+    expect(peak).toBeLessThanOrEqual(6)
+    expect(peak).toBeGreaterThan(1)
+    expect(completed).toBe(40)
+    expect(isTextFontReady({ fontFamily: 'noto-sans-jp' })).toBe(true)
+  })
+
   it('fails clearly if the stylesheet or loading API is unavailable', async () => {
     vi.stubGlobal('document', { fonts: { forEach() {} } })
     await expect(ensureTextFont({ fontFamily: 'noto-sans-jp' })).rejects.toThrow('同梱フォントが見つかりません')
