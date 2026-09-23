@@ -2,6 +2,14 @@
 
 届いたPDFに文字や口座情報を記入し、画像の印鑑を押して返送するための、Windows・macOS向けデスクトップMVPです。
 
+公式サイト: [lumastudiopdf.altimix.jp](https://lumastudiopdf.altimix.jp/)
+
+## ライセンスと公開範囲
+
+アプリと公式サイトのソースコードは [GNU GPL v3.0 のみ](LICENSE)（SPDX: `GPL-3.0-only`）で公開しています。v0.3.0 のソースコードと配布物も同じ条件です。ソースの閲覧、改変、再配布はこのライセンスに従ってください。配布物に対応するソースは [GitHub のリリース](https://github.com/altimix/lumastudio-pdf/releases) の各タグから確認できます。
+
+開発者写真 `website/public/assets/ando2026.png` はソースコードのライセンスの対象外です。写真の利用条件と同梱フォントのライセンスは [素材のライセンス一覧](website/ASSET-LICENSES.md) を参照してください。利用者自身が取り込むPDF・印鑑・証明書・APIキーは、このリポジトリに含めません。
+
 ## インストールして使う
 
 [GitHub Releases](https://github.com/altimix/lumastudio-pdf/releases) の試用版から、Windows用インストーラーまたはMac用DMGを選びます。Windowsのポータブル版と、MacのIntel／Apple Silicon向けZIPも用意します。配布版を使う場合はNode.jsは不要です。

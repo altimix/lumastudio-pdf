@@ -4,6 +4,7 @@
   "version": "0.3.0",
   "description": "PDFに記入して、印鑑を押して、すぐに返送。Windows・macOS向けPDF編集アプリ。",
   "private": true,
+  "license": "GPL-3.0-only",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "altimix",
