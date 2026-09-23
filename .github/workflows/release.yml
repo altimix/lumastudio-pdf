@@ -75,6 +75,7 @@ jobs:
             release/LumaStudio-PDF-*.zip
             release/SHA256SUMS-${{ matrix.platform }}.txt
             release/README-Mac.txt
+            release/LICENSE.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -111,6 +112,7 @@ jobs:
           release-assets/LumaStudio-PDF-*.zip
           release-assets/SHA256SUMS.txt
           release-assets/README-Mac.txt
+          release-assets/LICENSE.txt
           --verify-tag --prerelease
           --title "LumaStudio PDF $RELEASE_TAG — 試用版"
           --notes-file "docs/releases/$RELEASE_TAG.md"

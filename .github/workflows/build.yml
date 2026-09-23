@@ -38,10 +38,10 @@ jobs:
           if-no-files-found: ignore
       - name: Package unsigned Windows preview
         if: runner.os == 'Windows'
-        run: npx electron-builder --win portable --publish never
+        run: npx electron-builder --win nsis portable --x64 --publish never
       - name: Package Mac preview with ad-hoc integrity signature
         if: runner.os == 'macOS'
-        run: npx electron-builder --mac zip --x64 --arm64 --publish never -c.mac.identity=-
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never -c.mac.identity=-
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           # PR builds need this even for identity '-'. No signing secrets are supplied.
@@ -51,10 +51,19 @@ jobs:
         run: node scripts/release-mac-check.mjs
       - name: Verify packaged app starts and renders a PDF
         run: node scripts/release-smoke.mjs
+      - name: Verify Windows installers and GPL license
+        if: runner.os == 'Windows'
+        run: node scripts/release-check.mjs assets windows release
+      - name: Verify Mac archives and GPL license
+        if: runner.os == 'macOS'
+        run: node scripts/release-check.mjs assets macos release
       - uses: actions/upload-artifact@v4
         with:
           name: LumaStudio-PDF-${{ runner.os }}
           path: |
             release/*.exe
+            release/*.dmg
             release/*.zip
             release/README-Mac.txt
+            release/LICENSE.txt
+            release/SHA256SUMS-*.txt

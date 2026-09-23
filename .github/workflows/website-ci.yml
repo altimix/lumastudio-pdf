@@ -1,0 +1,57 @@
+name: Verify official website
+
+on:
+  pull_request:
+    paths:
+      - 'website/**'
+      - '.github/workflows/website-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/website-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --prefix website --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Check Workers static asset packaging
+        env:
+          CLOUDFLARE_SEND_METRICS: 'false'
+        run: npm run deploy:check --prefix website
+      - name: Check desktop and mobile website
+        env:
+          CLOUDFLARE_SEND_METRICS: 'false'
+        run: |
+          npm run dev --prefix website > /tmp/lumastudiopdf-site.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8792/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node website/verify.mjs || { cat /tmp/lumastudiopdf-site.log; exit 1; }
+      - name: Keep visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-verification-${{ github.sha }}
+          path: test-results/website/
+          if-no-files-found: warn
+          retention-days: 7

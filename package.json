@@ -1,9 +1,10 @@
 {
   "name": "lumastudio-pdf",
   "productName": "LumaStudio PDF",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "PDFに記入して、印鑑を押して、すぐに返送。Windows・macOS向けPDF編集アプリ。",
   "private": true,
+  "license": "GPL-3.0-only",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "altimix",
@@ -41,6 +42,10 @@
       "!**/*.{p12,pfx,pem,key,lumapdf}"
     ],
     "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
       {
         "from": "scripts/setup-printer.ps1",
         "to": "setup-printer.ps1"
@@ -92,7 +97,8 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extraDistFiles": [
-        "README-Mac.txt"
+        "README-Mac.txt",
+        "LICENSE"
       ],
       "target": [
         "dmg",
@@ -119,10 +125,16 @@
           "path": "/Applications"
         },
         {
-          "x": 270,
+          "x": 130,
           "y": 300,
           "type": "file",
           "path": "README-Mac.txt"
+        },
+        {
+          "x": 410,
+          "y": 300,
+          "type": "file",
+          "path": "LICENSE"
         }
       ]
     }

@@ -1,0 +1,15 @@
+{
+  "name": "lumastudio-pdf-website",
+  "version": "0.3.1",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8792",
+    "deploy": "wrangler deploy",
+    "deploy:check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "^4.136.3"
+  }
+}
