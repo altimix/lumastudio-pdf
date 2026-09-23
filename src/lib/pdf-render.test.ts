@@ -6,8 +6,8 @@ afterEach(() => vi.unstubAllGlobals())
 
 function drawingContext() {
   const context = {
-    font: '', fillStyle: '', strokeStyle: '', lineWidth: 0, lineJoin: '', textBaseline: '',
-    scale: vi.fn(), rect: vi.fn(), ellipse: vi.fn(), beginPath: vi.fn(), closePath: vi.fn(),
+    font: '', fillStyle: '', strokeStyle: '', lineWidth: 0, lineJoin: '', lineCap: '', globalAlpha: 1, textBaseline: '',
+    scale: vi.fn(), rect: vi.fn(), ellipse: vi.fn(), arc: vi.fn(), beginPath: vi.fn(), closePath: vi.fn(),
     fill: vi.fn(), stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), fillText: vi.fn(),
     measureText: (text: string) => ({ width: Array.from(text).length * 10 }),
   }
@@ -85,6 +85,20 @@ describe('material rendering for preview and PDF export', () => {
     expect(doubled.lineTo).toHaveBeenCalledTimes(2)
     expect(doubled.moveTo.mock.calls[0][1]).toBeLessThan(doubled.moveTo.mock.calls[1][1])
     expect(doubled.fill).not.toHaveBeenCalled()
+  })
+
+  it('renders editable pen paths and a translucent highlighter from the same points used in the PDF', async () => {
+    const pen = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'pen', color: '#123456', strokeWidth: 3, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
+    expect(pen.moveTo).toHaveBeenCalledWith(8, 20)
+    expect(pen.lineTo).toHaveBeenCalledWith(72, 20)
+    expect(pen.lineCap).toBe('round')
+    expect(pen.globalAlpha).toBe(1)
+    const marker = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', color: '#ffe14a', strokeWidth: 18, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
+    expect(marker.globalAlpha).toBe(0.35)
+    expect(marker.strokeStyle).toBe('#ffe14a')
+    expect(marker.lineWidth).toBe(18)
   })
 
   it('does not replace a zero outline width with its default', async () => {

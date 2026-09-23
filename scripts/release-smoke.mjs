@@ -66,6 +66,28 @@ try {
   assert.equal(bridge.signAndSavePdf, 'function');
   assert.equal(bridge.aiAvailable, false);
   assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
+  const restoreButton = page.getByRole('button', { name: '元のサイズに戻す' });
+  await expect(restoreButton).toHaveCount(0);
+  await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) throw new Error('LumaStudio PDFのメイン画面が見つかりません。');
+    window.maximize();
+  });
+  await expect(restoreButton).toBeVisible({ timeout: 30_000 });
+  await page.keyboard.press('Escape');
+  await expect(restoreButton).toHaveCount(0, { timeout: 30_000 });
+  const fullScreenable = await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) throw new Error('LumaStudio PDFのメイン画面が見つかりません。');
+    window.setFullScreen(true);
+    return window.isFullScreenable();
+  });
+  assert.equal(fullScreenable, true);
+  await expect.poll(() => page.evaluate(() => window.lumaDesktop.getWindowState()), { timeout: 30_000 }).toMatchObject({ fullScreen: true });
+  await expect(restoreButton).toBeVisible({ timeout: 30_000 });
+  await restoreButton.click();
+  await expect(restoreButton).toHaveCount(0, { timeout: 30_000 });
+  assert.deepEqual(await page.evaluate(() => window.lumaDesktop.getWindowState()), { maximized: false, fullScreen: false });
   await page.getByRole('button', { name: 'サンプルの書類で試す' }).click();
   await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.busy-indicator')).toHaveCount(0);
@@ -100,7 +122,16 @@ try {
   await page.getByRole('button', { name: '図形', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });
   await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
+  await page.getByRole('button', { name: 'ペン', exact: true }).click();
+  const surface = await page.getByTestId('pdf-surface').boundingBox();
+  if (!surface) throw new Error('手書き用のPDFが表示されていません。');
+  await page.mouse.move(surface.x + 100, surface.y + 250);
+  await page.mouse.down();
+  await page.mouse.move(surface.x + 200, surface.y + 280, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await expect(page.locator('.unsaved')).toHaveCount(0);
@@ -114,7 +145,7 @@ try {
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   await expect(sealSize).toHaveValue('44');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestore: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
   if (application) await application.close();
 }

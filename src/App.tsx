@@ -10,19 +10,23 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Eraser,
   FilePlus2,
   FileText,
   FolderOpen,
   Hand,
+  Highlighter,
   ImagePlus,
   Info,
   KeyRound,
   LoaderCircle,
   Lock,
   LockOpen,
+  Minimize2,
   MousePointer2,
   MoreHorizontal,
   PanelLeftClose,
+  PenLine,
   Plus,
   Printer,
   Redo2,
@@ -67,6 +71,7 @@ import {
   measureTextHeight,
   resolveTextGeometry,
 } from "./lib/fonts";
+import { createInkAnnotation, type InkKind, type InkPoint } from "./lib/ink";
 import { NumericField } from "./components/NumericField";
 import {
   TextStyleFields,
@@ -157,6 +162,10 @@ export default function App() {
   const [strokeColor, setStrokeColor] = useState("#000000");
   const [fillColor, setFillColor] = useState("none");
   const [strokeWidth, setStrokeWidth] = useState(1.5);
+  const [penColor, setPenColor] = useState("#1f2b2d");
+  const [penWidth, setPenWidth] = useState(2);
+  const [markerColor, setMarkerColor] = useState("#ffe14a");
+  const [markerWidth, setMarkerWidth] = useState(18);
   const [numericEditing, setNumericEditing] = useState(false);
   const [numericPreview, setNumericPreview] = useState<Annotation | null>(null);
   const numericPreviewRef = useRef<Annotation | null>(null);
@@ -221,6 +230,7 @@ export default function App() {
   const [includeStamp, setIncludeStamp] = useState(true);
   const [entryDate, setEntryDate] = useState(today());
   const [showPages, setShowPages] = useState(true);
+  const [windowState, setWindowState] = useState({ maximized: false, fullScreen: false });
   const pdfInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const stampInput = useRef<HTMLInputElement>(null);
@@ -261,6 +271,30 @@ export default function App() {
       cancelled = true;
     };
   }, [selected?.id, selected?.fontFamily]);
+  useEffect(() => {
+    const desktop = window.lumaDesktop;
+    if (!desktop || typeof desktop.getWindowState !== "function" || typeof desktop.onWindowStateChange !== "function") return;
+    let active = true;
+    let changed = false;
+    const update = (state: { maximized: boolean; fullScreen: boolean }) => {
+      if (active) setWindowState(current => current.maximized === state.maximized && current.fullScreen === state.fullScreen ? current : state);
+    };
+    const unsubscribe = desktop.onWindowStateChange((state) => {
+      changed = true;
+      update(state);
+    });
+    void desktop.getWindowState().then((state) => {
+      if (!changed) update(state);
+    }).catch(() => {});
+    // Native full-screen transitions do not report every intermediate state on
+    // all window managers. Resize catches most changes; a low-rate check also
+    // covers a missed event without relying on the title bar being visible.
+    const sync = () => { void desktop.getWindowState().then(update).catch(() => {}); };
+    const onResize = () => window.setTimeout(sync, 60);
+    window.addEventListener("resize", onResize);
+    const timer = window.setInterval(() => { if (!document.hidden) sync(); }, 1500);
+    return () => { active = false; unsubscribe(); window.removeEventListener("resize", onResize); window.clearInterval(timer); };
+  }, []);
   const viewport = usePdfViewport({
     workspaceRef,
     scale,
@@ -1237,6 +1271,11 @@ export default function App() {
         e.preventDefault();
         removeSelected();
       } else if (!typing && e.key === "Escape") {
+        if (window.lumaDesktop && (windowState.maximized || windowState.fullScreen)) {
+          e.preventDefault();
+          void window.lumaDesktop.restoreWindow();
+          return;
+        }
         setSelectedId(null);
         setTool("select");
         setProfileOpen(false);
@@ -1253,6 +1292,9 @@ export default function App() {
       !page ||
       tool === "select" ||
       tool === "hand" ||
+      tool === "pen" ||
+      tool === "marker" ||
+      tool === "eraser" ||
       currentRef.current.busy ||
       signedInput
     )
@@ -1391,6 +1433,29 @@ export default function App() {
         setBusy("");
       }
     } else finish();
+  };
+  const drawInk = (kind: InkKind, points: InkPoint[]) => {
+    if (!page || busy || signedInput || !points.length) return;
+    try {
+      const annotation = createInkAnnotation(
+        crypto.randomUUID(), page, kind, points,
+        kind === "marker" ? markerColor : penColor,
+        kind === "marker" ? markerWidth : penWidth,
+      );
+      commit({ ...editsRef.current, annotations: [...editsRef.current.annotations, annotation] });
+      setSelectedId(null);
+      setError("");
+    } catch (error) { setError(String(error)); }
+  };
+  const eraseInk = (ids: string[]) => {
+    if (busy || signedInput || !ids.length) return;
+    const targets = new Set(ids);
+    commit({
+      ...editsRef.current,
+      annotations: editsRef.current.annotations.filter(annotation =>
+        !((annotation.type === "pen" || annotation.type === "marker") && targets.has(annotation.id))),
+    });
+    setSelectedId(null);
   };
   const chooseTool = (value: Tool) => {
     flushInlineText();
@@ -1621,6 +1686,9 @@ export default function App() {
     { id: "check", label: "チェック", icon: CheckCheck },
     { id: "image", label: "画像", icon: ImagePlus },
     { id: "shape", label: "図形", icon: Shapes },
+    { id: "pen", label: "ペン", icon: PenLine },
+    { id: "marker", label: "蛍光ペン", icon: Highlighter },
+    { id: "eraser", label: "消しゴム", icon: Eraser },
   ];
   const stampPreview: Annotation = {
     id: "preview",
@@ -1668,6 +1736,17 @@ export default function App() {
             <span className="version">v{appVersion}</span>
           </div>
           <div className="header-actions">
+            {window.lumaDesktop && (windowState.maximized || windowState.fullScreen) && (
+              <button
+                className="window-restore-button"
+                aria-label="元のサイズに戻す"
+                title="元のサイズに戻す（Esc）"
+                onClick={() => void window.lumaDesktop?.restoreWindow()}
+              >
+                <Minimize2 size={17} />
+                <span>元のサイズに戻す</span>
+              </button>
+            )}
             <button
               disabled={!!busy}
               aria-label="証明書ガイド"
@@ -1931,12 +2010,11 @@ export default function App() {
                             activatePage(p.id);
                           }}
                         >
-                          <div className="thumbnail-paper">
-                            <Thumbnail document={pdf} page={p} />
-                            {edits.annotations.some(
-                              (a) => a.pageId === p.id,
-                            ) && <span className="edited-dot" />}
-                          </div>
+                          <Thumbnail
+                            document={pdf}
+                            page={p}
+                            annotated={edits.annotations.some((a) => a.pageId === p.id)}
+                          />
                           <span>{i + 1}</span>
                         </button>
                         <button
@@ -2032,6 +2110,10 @@ export default function App() {
                   <span>
                     {tool === "hand"
                       ? "ドラッグで移動・2本指で拡大縮小"
+                      : tool === "pen" || tool === "marker"
+                        ? "ドラッグで手書き・Shiftを押しながら引くと直線"
+                        : tool === "eraser"
+                          ? "追加したペン・蛍光ペンの線をクリックまたはドラッグして消去"
                       : tool === "select"
                         ? "文字はダブルクリックで編集・四隅をドラッグでサイズ変更"
                         : tool === "text" && !text.trim()
@@ -2051,7 +2133,10 @@ export default function App() {
                     )
                     .filter((a) => a.pageId === page.id)}
                   selectedId={selectedId}
-                  placing={tool !== "select" && tool !== "hand"}
+                  placing={tool !== "select" && tool !== "hand" && tool !== "pen" && tool !== "marker" && tool !== "eraser"}
+                  inkTool={tool === "pen" || tool === "marker" || tool === "eraser" ? tool : null}
+                  inkColor={tool === "marker" ? markerColor : penColor}
+                  inkWidth={tool === "marker" ? markerWidth : penWidth}
                   readOnly={signedInput || !!busy}
                   panning={viewport.panning || tool === "hand"}
                   isGesturePointer={viewport.isGesturePointer}
@@ -2071,6 +2156,8 @@ export default function App() {
                       rememberStampSize(Math.max(patch.width ?? source.width, patch.height ?? source.height));
                   }}
                   onPlace={place}
+                  onDrawInk={drawInk}
+                  onEraseInk={eraseInk}
                   onSelect={(id) => {
                     flushInlineText();
                     setSelectedId(id);
@@ -2134,7 +2221,11 @@ export default function App() {
                           ? "画像・印影"
                           : selected.type === "shape"
                             ? "図形"
-                            : "チェック"}
+                            : selected.type === "pen"
+                              ? "ペンで描いた線"
+                              : selected.type === "marker"
+                                ? "蛍光ペンの線"
+                                : "チェック"}
                   </span>
                   {(selected.type === "text" || selected.type === "stamp") && (
                     <label>
@@ -2298,6 +2389,33 @@ export default function App() {
                     この要素を削除
                   </button>
                 </>
+              ) : tool === "pen" || tool === "marker" ? (
+                <>
+                  <label className="color-field">
+                    {tool === "marker" ? "マーカーの色" : "ペンの色"}
+                    <input
+                      type="color"
+                      aria-label={tool === "marker" ? "マーカーの色" : "ペンの色"}
+                      value={tool === "marker" ? markerColor : penColor}
+                      onChange={(event) => tool === "marker" ? setMarkerColor(event.target.value) : setPenColor(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    線の太さ
+                    <NumericField
+                      aria-label="手書き線の太さ"
+                      value={tool === "marker" ? markerWidth : penWidth}
+                      min={1}
+                      max={72}
+                      step={1}
+                      suffix="pt"
+                      onChange={(value) => tool === "marker" ? setMarkerWidth(value) : setPenWidth(value)}
+                    />
+                  </label>
+                  <p className="help-text">用紙をドラッグして描きます。Shiftキーを押したまま引くと直線になります。完成後も移動・サイズ変更ができます。</p>
+                </>
+              ) : tool === "eraser" ? (
+                <p className="help-text">ペンと蛍光ペンで描いた線をクリックまたはドラッグして、線ごと消去します。元のPDFや文字・印鑑・画像は消しません。「元に戻す」で復元できます。</p>
               ) : tool === "shape" ? (
                 <>
                   <ShapeStyleFields

@@ -208,7 +208,26 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
   const color = annotation.color || (annotation.type === 'stamp' ? '#b82e2b' : '#000000')
   context.fillStyle = color
   context.strokeStyle = color
-  if (annotation.type === 'shape') {
+  if (annotation.type === 'pen' || annotation.type === 'marker') {
+    const points = annotation.points ?? []
+    if (!points.length) throw new Error('手書き線の点がありません。')
+    context.strokeStyle = color
+    context.fillStyle = color
+    context.globalAlpha = annotation.type === 'marker' ? 0.35 : 1
+    context.lineWidth = annotation.strokeWidth ?? (annotation.type === 'marker' ? 18 : 2)
+    context.lineCap = 'round'
+    context.lineJoin = 'round'
+    if (points.length === 1) {
+      context.beginPath()
+      context.arc(points[0].x * width, points[0].y * height, context.lineWidth / 2, 0, Math.PI * 2)
+      context.fill()
+    } else {
+      context.beginPath()
+      context.moveTo(points[0].x * width, points[0].y * height)
+      for (const point of points.slice(1)) context.lineTo(point.x * width, point.y * height)
+      context.stroke()
+    }
+  } else if (annotation.type === 'shape') {
     const lineShape = annotation.shapeKind === 'line' || annotation.shapeKind === 'double-line'
     const strokeColor = lineShape && annotation.strokeColor === 'none' ? '#000000' : annotation.strokeColor ?? '#000000'
     const fillColor = lineShape ? 'none' : annotation.fillColor ?? 'none'

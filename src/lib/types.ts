@@ -1,4 +1,4 @@
-export type AnnotationType = 'text' | 'stamp' | 'image' | 'check' | 'shape'
+export type AnnotationType = 'text' | 'stamp' | 'image' | 'check' | 'shape' | 'pen' | 'marker'
 export type FontFamilyId = 'legacy' | 'noto-sans-jp' | 'noto-serif-jp' | 'm-plus-1' | 'biz-udgothic'
 export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'line' | 'double-line'
 
@@ -28,6 +28,8 @@ export interface Annotation {
   strokeColor?: string
   fillColor?: string
   strokeWidth?: number
+  /** Pen and marker path coordinates, normalized within this annotation's box. */
+  points?: { x: number; y: number }[]
 }
 
 export interface PageInfo {
@@ -45,4 +47,4 @@ export interface PageInfo {
   viewportTransform?: number[]
 }
 
-export type Tool = 'select' | 'hand' | AnnotationType
+export type Tool = 'select' | 'hand' | 'eraser' | AnnotationType

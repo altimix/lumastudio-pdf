@@ -22,6 +22,7 @@ import {
   isAspectLocked,
   type ResizeHandle,
 } from "../lib/annotation-geometry";
+import { inkHitTest, MAX_INK_POINTS, type InkKind, type InkPoint } from "../lib/ink";
 import "./PdfPage.css";
 
 export function AnnotationVisual({
@@ -58,17 +59,24 @@ export function AnnotationVisual({
 export function Thumbnail({
   document,
   page,
+  annotated = false,
 }: {
   document: PDFDocumentProxy;
   page: PageInfo;
+  annotated?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const sideways = page.rotation % 180 !== 0;
+  const displayWidth = sideways ? page.height : page.width;
+  const displayHeight = sideways ? page.width : page.height;
+  const paperWidth = Math.min(116, 150 * displayWidth / displayHeight);
+  const renderScale = Math.min(116 / displayWidth, 150 / displayHeight);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     let cancelled = false;
     const scratch = window.document.createElement("canvas");
-    renderPdfPage(document, page.sourceIndex, scratch, 110 / page.width)
+    renderPdfPage(document, page.sourceIndex, scratch, renderScale)
       .then(() => {
         if (!cancelled) {
           canvas.width = scratch.width;
@@ -80,9 +88,19 @@ export function Thumbnail({
     return () => {
       cancelled = true;
     };
-  }, [document, page.sourceIndex, page.width]);
+  }, [document, page.sourceIndex, renderScale]);
   return (
-    <canvas ref={ref} style={{ transform: `rotate(${page.rotation}deg)` }} />
+    <div className="thumbnail-paper" style={{ width: paperWidth, aspectRatio: `${displayWidth} / ${displayHeight}` }}>
+      <canvas
+        ref={ref}
+        style={{
+          width: `${page.width / displayWidth * 100}%`,
+          height: `${page.height / displayHeight * 100}%`,
+          transform: `translate(-50%, -50%) rotate(${page.rotation}deg)`,
+        }}
+      />
+      {annotated && <span className="edited-dot" />}
+    </div>
   );
 }
 
@@ -99,6 +117,9 @@ type Props = {
   scale: number;
   selectedId: string | null;
   placing: boolean;
+  inkTool: InkKind | 'eraser' | null;
+  inkColor: string;
+  inkWidth: number;
   readOnly: boolean;
   panning: boolean;
   isGesturePointer(pointerId: number): boolean;
@@ -108,6 +129,8 @@ type Props = {
   onCommitText(annotation: Annotation): void;
   onResize(id: string, patch: Partial<Annotation>): void;
   onPlace(x: number, y: number): void;
+  onDrawInk(kind: InkKind, points: InkPoint[]): void;
+  onEraseInk(ids: string[]): void;
   onSelect(id: string | null): void;
   onMove(id: string, x: number, y: number): void;
   onError(message: string): void;
@@ -125,6 +148,13 @@ type Interaction = {
   startX: number;
   startY: number;
   corner?: ResizeHandle;
+};
+type InkGesture = {
+  pointerId: number;
+  kind: InkKind | 'eraser';
+  points: InkPoint[];
+  straight: boolean;
+  eraseIds: Set<string>;
 };
 const CORNERS: Array<{ corner: ResizeHandle; label: string }> = [
   { corner: "nw", label: "左上" },
@@ -173,6 +203,9 @@ export function PdfPage({
   scale,
   selectedId,
   placing,
+  inkTool,
+  inkColor,
+  inkWidth,
   readOnly,
   panning,
   isGesturePointer,
@@ -182,6 +215,8 @@ export function PdfPage({
   onCommitText,
   onResize,
   onPlace,
+  onDrawInk,
+  onEraseInk,
   onSelect,
   onMove,
   onError,
@@ -193,6 +228,10 @@ export function PdfPage({
   const actionsRef = useRef<HTMLDivElement>(null);
   const [actionsSize, setActionsSize] = useState({ width: 380, height: 42 });
   const interaction = useRef<Interaction | null>(null);
+  const inkGesture = useRef<InkGesture | null>(null);
+  const [inkPreview, setInkPreview] = useState<InkPoint[] | null>(null);
+  const [eraserPoint, setEraserPoint] = useState<InkPoint | null>(null);
+  const [pendingEraseIds, setPendingEraseIds] = useState<Set<string>>(() => new Set());
   const previewRef = useRef<Annotation | null>(null);
   const [preview, setPreview] = useState<Annotation | null>(null);
   const [draft, setDraft] = useState<InlineDraft | null>(null);
@@ -219,6 +258,12 @@ export function PdfPage({
     interaction.current = null;
     previewRef.current = null;
     setPreview(null);
+  };
+  const clearInkGesture = () => {
+    inkGesture.current = null;
+    setInkPreview(null);
+    setEraserPoint(null);
+    setPendingEraseIds(new Set());
   };
   const takeDraft = (): Annotation | null => {
     const pending = draftRef.current;
@@ -251,8 +296,9 @@ export function PdfPage({
     if (draftRef.current && draftRef.current.annotation.pageId !== page.id)
       cancelDraft();
     clearInteraction();
+    clearInkGesture();
     touchPlace.current = null;
-  }, [page.id, readOnly]);
+  }, [page.id, readOnly, inkTool]);
   useEffect(() => {
     if (!textDraft || consumedDraft.current === textDraft.id) return;
     consumedDraft.current = textDraft.id;
@@ -381,16 +427,20 @@ export function PdfPage({
       if (event.key === "Escape" && interaction.current) {
         clearInteraction();
         event.preventDefault();
+      } else if (event.key === "Escape" && inkGesture.current) {
+        clearInkGesture();
+        event.preventDefault();
       }
     };
     const blur = () => {
       clearInteraction();
+      clearInkGesture();
       touchPlace.current = null;
     };
-    window.addEventListener("keydown", cancel);
+    window.addEventListener("keydown", cancel, true);
     window.addEventListener("blur", blur);
     return () => {
-      window.removeEventListener("keydown", cancel);
+      window.removeEventListener("keydown", cancel, true);
       window.removeEventListener("blur", blur);
     };
   }, []);
@@ -405,6 +455,51 @@ export function PdfPage({
       scale,
       page,
     );
+  const toInkPoint = (clientX: number, clientY: number): InkPoint => {
+    const point = toPoint(clientX, clientY);
+    return { x: Math.max(0, Math.min(page.width, point.x)), y: Math.max(0, Math.min(page.height, point.y)) };
+  };
+  const collectEraseHits = (point: InkPoint, gesture: InkGesture) => {
+    for (const annotation of annotations) if (inkHitTest(annotation, point)) gesture.eraseIds.add(annotation.id);
+    setPendingEraseIds(new Set(gesture.eraseIds));
+  };
+  const appendInkPoint = (gesture: InkGesture, point: InkPoint) => {
+    const last = gesture.points.at(-1)!;
+    if (Math.hypot(point.x - last.x, point.y - last.y) < 0.8) return;
+    if (gesture.points.length >= MAX_INK_POINTS)
+      gesture.points = gesture.points.filter((_, index) => index % 2 === 0 || index === gesture.points.length - 1);
+    gesture.points.push(point);
+  };
+  const moveInk = (event: PointerEvent<HTMLDivElement>) => {
+    const point = toInkPoint(event.clientX, event.clientY);
+    if (inkTool === 'eraser') setEraserPoint(point);
+    const gesture = inkGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (readOnly || panning || isGesturePointer(event.pointerId)) { clearInkGesture(); return; }
+    if (gesture.kind === 'eraser') { collectEraseHits(point, gesture); return; }
+    gesture.straight ||= event.shiftKey;
+    if (gesture.straight) gesture.points = [gesture.points[0], point];
+    else appendInkPoint(gesture, point);
+    setInkPreview([...gesture.points]);
+  };
+  const finishInk = (event: PointerEvent<HTMLDivElement>) => {
+    const gesture = inkGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (!readOnly && !panning && !isGesturePointer(event.pointerId)) {
+      const point = toInkPoint(event.clientX, event.clientY);
+      if (gesture.kind === 'eraser') {
+        collectEraseHits(point, gesture);
+        onEraseInk([...gesture.eraseIds]);
+      } else {
+        gesture.straight ||= event.shiftKey;
+        if (gesture.straight) gesture.points = [gesture.points[0], point];
+        else appendInkPoint(gesture, point);
+        onDrawInk(gesture.kind, gesture.points);
+      }
+    }
+    clearInkGesture();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   const beginTextEdit = (annotation: Annotation) => {
     if (readOnly || panning || annotation.type !== "text") return;
     commitDraft();
@@ -578,9 +673,9 @@ export function PdfPage({
               key={annotation.id}
               role="button"
               tabIndex={0}
-              aria-label={`${annotation.type === "stamp" ? "印鑑" : annotation.type === "text" ? "文字" : annotation.type === "check" ? "チェック" : annotation.type === "shape" ? "図形" : "画像"}: ${annotation.text ?? ""}`}
+              aria-label={`${annotation.type === "stamp" ? "印鑑" : annotation.type === "text" ? "文字" : annotation.type === "check" ? "チェック" : annotation.type === "shape" ? "図形" : annotation.type === "pen" ? "ペン" : annotation.type === "marker" ? "蛍光ペン" : "画像"}: ${annotation.text ?? ""}`}
               aria-pressed={selectedId === annotation.id}
-              className={`annotation ${selectedId === annotation.id && !editing ? "selected" : ""} ${editing ? "editing" : ""}`}
+              className={`annotation ${selectedId === annotation.id && !editing ? "selected" : ""} ${editing ? "editing" : ""} ${pendingEraseIds.has(annotation.id) ? "pending-erase" : ""}`}
               style={{
                 left: visual.x * scale,
                 top: visual.y * scale,
@@ -803,6 +898,36 @@ export function PdfPage({
               </button>
               <span>改行 Enter · 確定 Ctrl / ⌘ + Enter</span>
             </div>
+          </div>
+        )}
+        {inkTool && !readOnly && !panning && (
+          <div
+            className={`ink-input-layer ${inkTool}`}
+            data-testid="ink-input-layer"
+            onPointerDown={(event) => {
+              if (event.button !== 0 || isGesturePointer(event.pointerId)) return;
+              if (inkGesture.current) { clearInkGesture(); return; }
+              event.preventDefault();
+              event.stopPropagation();
+              const point = toInkPoint(event.clientX, event.clientY);
+              const gesture: InkGesture = { pointerId: event.pointerId, kind: inkTool, points: [point], straight: event.shiftKey, eraseIds: new Set() };
+              inkGesture.current = gesture;
+              if (inkTool === 'eraser') { setEraserPoint(point); collectEraseHits(point, gesture); }
+              else setInkPreview([point]);
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => { event.stopPropagation(); moveInk(event); }}
+            onPointerUp={(event) => { event.stopPropagation(); finishInk(event); }}
+            onPointerCancel={(event) => { event.stopPropagation(); clearInkGesture(); }}
+            onLostPointerCapture={() => clearInkGesture()}
+            onPointerLeave={() => { if (!inkGesture.current) setEraserPoint(null); }}
+          >
+            <svg viewBox={`0 0 ${page.width} ${page.height}`} preserveAspectRatio="none" aria-hidden="true">
+              {inkPreview && (inkPreview.length === 1
+                ? <circle cx={inkPreview[0].x} cy={inkPreview[0].y} r={inkWidth / 2} fill={inkColor} opacity={inkTool === 'marker' ? 0.35 : 1} />
+                : <polyline points={inkPreview.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke={inkColor} strokeWidth={inkWidth} strokeLinecap="round" strokeLinejoin="round" opacity={inkTool === 'marker' ? 0.35 : 1} />)}
+              {inkTool === 'eraser' && eraserPoint && <circle cx={eraserPoint.x} cy={eraserPoint.y} r={8} fill="#ffffff55" stroke="#297c6c" strokeWidth={1.5} />}
+            </svg>
           </div>
         )}
       </div>

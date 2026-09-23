@@ -98,6 +98,19 @@ describe('editable PDF project', () => {
     expect(decodeProject(encodeProject(project))).toEqual(project)
   })
 
+  it('round-trips pen and marker paths and rejects points outside the page box', () => {
+    const project = example()
+    project.annotations.push({ id: 'pen', pageId: 'page-one', type: 'pen', x: 40, y: 50, width: 150, height: 30, color: '#123456', strokeWidth: 2, points: [{ x: 0.05, y: 0.2 }, { x: 0.9, y: 0.8 }] })
+    project.annotations.push({ id: 'marker', pageId: 'page-two', type: 'marker', x: 100, y: 200, width: 200, height: 25, color: '#ffe14a', strokeWidth: 18, points: [{ x: 0.05, y: 0.5 }, { x: 0.95, y: 0.5 }] })
+    expect(decodeProject(encodeProject(project))).toEqual(project)
+    const invalid = JSON.parse(new TextDecoder().decode(encodeProject(project)))
+    invalid.annotations.at(-1).points[0].x = 1.1
+    expect(() => decodeRaw(invalid)).toThrow('手書き線の横位置')
+    invalid.annotations.at(-1).points[0].x = 0.1
+    invalid.annotations[0].points = [{ x: 0.5, y: 0.5 }]
+    expect(() => decodeRaw(invalid)).toThrow('手書き線以外')
+  })
+
   it('only saves allowed document fields and drops unrelated metadata on decode', () => {
     const project = example()
     const extras = {

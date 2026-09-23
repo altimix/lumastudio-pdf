@@ -2,6 +2,9 @@ export {};
 declare global {
   interface Window {
     lumaDesktop?: {
+      getWindowState(): Promise<{ maximized: boolean; fullScreen: boolean }>;
+      restoreWindow(): Promise<void>;
+      onWindowStateChange(callback: (state: { maximized: boolean; fullScreen: boolean }) => void): () => void;
       openPdf(): Promise<{ name: string; data: number[] } | null>;
       openPdfs(): Promise<{ name: string; data: number[] }[]>;
       openProject(): Promise<{ name: string; data: number[] } | null>;
