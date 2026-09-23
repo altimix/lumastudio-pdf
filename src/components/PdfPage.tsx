@@ -300,6 +300,24 @@ export function PdfPage({
     draft?.annotation.fontWeight,
     draft?.annotation.fontStyle,
   ]);
+  useEffect(() => {
+    const current = draftRef.current;
+    if (!current?.fontReady || !current.annotation.text || isTextFontReady(current.annotation)) return;
+    let cancelled = false;
+    const requested = current.annotation;
+    // Keep the textarea active while an IME is composing. Once the user pauses,
+    // load only the new glyphs and recalculate the height with the actual face.
+    const timer = window.setTimeout(() => {
+      void ensureTextFont(requested)
+        .then(() => {
+          const latest = draftRef.current;
+          if (cancelled || !latest || latest.annotation.id !== requested.id || latest.annotation.text !== requested.text) return;
+          changeDraft({ ...latest, annotation: textWithHeight(latest.annotation, requested.text || "", page.height) });
+        })
+        .catch((error: unknown) => { if (!cancelled) onError(String(error)); });
+    }, 100);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [draft?.annotation.id, draft?.annotation.text, draft?.annotation.fontFamily, draft?.annotation.fontWeight, draft?.annotation.fontStyle, draft?.fontReady, page.height]);
   useLayoutEffect(() => {
     if (!draft?.fontReady || readOnly) return;
     if (

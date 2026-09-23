@@ -81,11 +81,17 @@ try {
   await input.fill('同梱フォントの確認');
   await input.press('ControlOrMeta+Enter');
   await expect(page.getByRole('button', { name: '文字: 同梱フォントの確認', exact: true }).locator('img')).toHaveAttribute('src', /^data:image\/png/);
-  assert.equal(await page.evaluate(() => {
+  const fontState = await page.evaluate(() => {
     const faces = [];
     document.fonts.forEach((face) => { if (face.family.includes('Noto Sans JP Variable')) faces.push(face); });
-    return faces.length > 0 && faces.every(face => face.status === 'loaded');
-  }), true);
+    return {
+      total: faces.length,
+      loaded: faces.filter(face => face.status === 'loaded').length,
+      textReady: document.fonts.check('normal 400 11px "Noto Sans JP Variable"', '同梱フォントの確認'),
+    };
+  });
+  assert.ok(fontState.total > 50 && fontState.loaded > 0 && fontState.loaded < fontState.total / 2 && fontState.textReady,
+    'Only the Japanese font subsets used by the sample text should be loaded.');
   assert.ok(fontRequests.length > 0 && fontRequests.every(url => url.startsWith('file:')), 'Fonts must load from the packaged application.');
   await page.getByRole('button', { name: '図形', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });

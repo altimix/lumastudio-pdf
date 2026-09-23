@@ -34,6 +34,18 @@ test('同梱Googleフォントの標準・装飾を選んで再開し、PDFに�
   await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 140 } });
   const annotation = page.getByRole('button', { name: '文字: 日本語の書体と太字', exact: true });
   await expect(annotation.locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  const fontSubsets = await page.evaluate(() => {
+    let total = 0, loaded = 0;
+    document.fonts.forEach(face => {
+      if (face.family.replace(/^["']|["']$/g, '') !== 'Noto Serif JP Variable') return;
+      total++;
+      if (face.status === 'loaded') loaded++;
+    });
+    return { total, loaded };
+  });
+  expect(fontSubsets.total).toBeGreaterThan(50);
+  expect(fontSubsets.loaded).toBeGreaterThan(0);
+  expect(fontSubsets.loaded).toBeLessThan(fontSubsets.total / 2);
   const saved = await project(page, info, 'styled-text.lumapdf');
   expect(saved.data.annotations[0]).toMatchObject({ fontFamily: 'noto-serif-jp', fontWeight: 700, fontStyle: 'italic', underline: true, fontSize: 11, color: '#000000' });
   await page.reload();
