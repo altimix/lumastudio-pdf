@@ -592,6 +592,32 @@ export default function App() {
     );
     notify(`${index + 1}ページ目を削除しました。「元に戻す」で戻せます。`);
   };
+  const navigatePage = (offset: -1 | 1) => {
+    const next = editsRef.current.pages[pageIndex + offset];
+    if (next) activatePage(next.id);
+  };
+  const moveCurrentPage = (offset: -1 | 1) => {
+    if (!page || busy || signedInput) return;
+    const current = flushInlineText();
+    const index = current.pages.findIndex((item) => item.id === page.id);
+    const nextIndex = index + offset;
+    if (index < 0 || nextIndex < 0 || nextIndex >= current.pages.length) return;
+    const pages = [...current.pages];
+    [pages[index], pages[nextIndex]] = [pages[nextIndex], pages[index]];
+    commit({ ...current, pages });
+  };
+  const rotateCurrentPage = () => {
+    if (!page || busy || signedInput) return;
+    const current = flushInlineText();
+    commit({
+      ...current,
+      pages: current.pages.map((item) =>
+        item.id === page.id
+          ? { ...item, rotation: (item.rotation + 90) % 360 }
+          : item,
+      ),
+    });
+  };
   const showPageMenu = (
     pageId: string,
     x: number,
@@ -1513,6 +1539,57 @@ export default function App() {
       (page.rotation % 180 ? page.width : page.height);
     viewport.zoomTo(wholePage ? Math.min(widthScale, heightScale) : widthScale);
   };
+  useEffect(() => {
+    if (!window.lumaDesktop?.onMenuAction) return;
+    return window.lumaDesktop.onMenuAction((action) => {
+      if (
+        busy || editableCopySource || profileOpen || printHelp || aiOpen || stampFile ||
+        signatureOpen || mergeOpen || projectOpen || pageMenu || aiSettingsOpen || certificateGuideOpen
+      ) return;
+      if (!pdf && !["merge-pdf", "open-project", "toggle-pages"].includes(action)) {
+        setError("先にPDFを開いてください。");
+        return;
+      }
+      if (signedInput && [
+        "merge-pdf", "save-pdf", "save-project", "sign-pdf", "undo-edit", "redo-edit",
+        "move-page-before", "move-page-after", "rotate-page", "delete-page", "ai-autofill",
+        "tool-text", "tool-stamp", "tool-check", "tool-image", "tool-shape", "tool-pen",
+        "tool-marker", "tool-eraser",
+      ].includes(action)) return;
+      switch (action) {
+        case "merge-pdf": void chooseMergeFiles(); break;
+        case "save-pdf": void save(); break;
+        case "open-project": void openProject(); break;
+        case "save-project": void saveProject(); break;
+        case "print-pdf": void print(); break;
+        case "sign-pdf": setSignatureOpen(true); break;
+        case "undo-edit": undo(); break;
+        case "redo-edit": redo(); break;
+        case "zoom-in": viewport.zoomBy(0.1); break;
+        case "zoom-out": viewport.zoomBy(-0.1); break;
+        case "fit-width": fit(false); break;
+        case "fit-page": fit(true); break;
+        case "toggle-pages": setShowPages((visible) => !visible); break;
+        case "previous-page": navigatePage(-1); break;
+        case "next-page": navigatePage(1); break;
+        case "move-page-before": moveCurrentPage(-1); break;
+        case "move-page-after": moveCurrentPage(1); break;
+        case "rotate-page": rotateCurrentPage(); break;
+        case "delete-page": if (page) deletePage(page.id); break;
+        case "tool-select": chooseTool("select"); break;
+        case "tool-hand": chooseTool("hand"); break;
+        case "tool-text": chooseTool("text"); break;
+        case "tool-stamp": chooseTool("stamp"); break;
+        case "tool-check": chooseTool("check"); break;
+        case "tool-image": chooseTool("image"); break;
+        case "tool-shape": chooseTool("shape"); break;
+        case "tool-pen": chooseTool("pen"); break;
+        case "tool-marker": chooseTool("marker"); break;
+        case "tool-eraser": chooseTool("eraser"); break;
+        case "ai-autofill": setAiResult(null); setAiOpen(true); break;
+      }
+    });
+  });
   const renderError = useCallback((value: string) => setError(value), []);
   const registerStamp = (value: SavedStamp) => {
     try {
@@ -1703,6 +1780,10 @@ export default function App() {
     stampShape: stamp.shape,
     dataUrl: stamp.dataUrl,
   };
+  // Keep the canvas in place while switching between selection and tool settings.
+  const showProperties = !!pdf;
+  const shownPageWidth = page ? (page.rotation % 180 ? page.height : page.width) : 0;
+  const shownPageHeight = page ? (page.rotation % 180 ? page.width : page.height) : 0;
 
   return (
     <>
@@ -1891,7 +1972,7 @@ export default function App() {
             </button>
           </div>
         </div>
-        <div className={`editor-layout ${!showPages ? "pages-hidden" : ""}`}>
+        <div className={`editor-layout ${!showPages ? "pages-hidden" : ""} ${!showProperties ? "properties-hidden" : ""}`}>
           {showPages && (
             <aside className="pages-panel">
               <div className="panel-title">
@@ -2121,6 +2202,45 @@ export default function App() {
                           : "用紙の置きたい場所をクリック"}
                   </span>
                 </div>
+                <fieldset className="page-action-bar" disabled={signedInput || !!busy}>
+                  <legend>このページの操作</legend>
+                  <button
+                    type="button"
+                    aria-label="ページを前へ"
+                    disabled={pageIndex === 0}
+                    onClick={() => moveCurrentPage(-1)}
+                  >
+                    <ArrowUp size={15} />
+                    前へ
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="ページを後ろへ"
+                    disabled={pageIndex === edits.pages.length - 1}
+                    onClick={() => moveCurrentPage(1)}
+                  >
+                    <ArrowDown size={15} />
+                    後ろへ
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="ページを右に回転"
+                    onClick={rotateCurrentPage}
+                  >
+                    <RotateCw size={15} />
+                    右へ回転
+                  </button>
+                  <button
+                    type="button"
+                    className="page-action-delete"
+                    aria-label="ページを削除"
+                    disabled={edits.pages.length === 1}
+                    onClick={() => deletePage(page.id)}
+                  >
+                    <Trash2 size={15} />
+                    削除
+                  </button>
+                </fieldset>
                 <PdfPage
                   key={page.id}
                   ref={pageEditorRef}
@@ -2179,7 +2299,7 @@ export default function App() {
               </div>
             )}
           </main>
-          <aside className="properties-panel">
+          {showProperties && <aside className="properties-panel">
             <div className="panel-title">
               <h2>
                 {selected
@@ -2192,9 +2312,15 @@ export default function App() {
                         ? "画像を追加"
                         : tool === "shape"
                           ? "図形を追加"
-                          : tool === "check"
+                        : tool === "check"
                             ? "チェックを追加"
-                            : "書類を仕上げる"}
+                            : tool === "pen"
+                              ? "ペンで描く"
+                              : tool === "marker"
+                                ? "蛍光ペンで描く"
+                                : tool === "eraser"
+                                  ? "線を消す"
+                                  : "ページ情報"}
               </h2>
               {selected && (
                 <button
@@ -2719,120 +2845,16 @@ export default function App() {
                     チェックを入れる場所をクリック。配置後に大きさや色も変えられます。
                   </p>
                 </>
-              ) : (
-                <>
-                  <div className="workflow-step">
-                    <span>
-                      <Type size={19} />
-                    </span>
-                    <div>
-                      <h3>必要事項を記入</h3>
-                      <p>名前や口座番号を、記入欄へ。</p>
-                    </div>
-                  </div>
-                  <div className="workflow-step">
-                    <span>
-                      <Stamp size={19} />
-                    </span>
-                    <div>
-                      <h3>印鑑を押す</h3>
-                      <p>名前から作成、画像も使えます。</p>
-                    </div>
-                  </div>
-                  <div className="workflow-step">
-                    <span>
-                      <Download size={19} />
-                    </span>
-                    <div>
-                      <h3>保存して返送</h3>
-                      <p>記入済みPDFをメールに添付。</p>
-                    </div>
-                  </div>
-                  <div className="section-divider" />
-                  <div className="ai-intro">
-                    <Sparkles size={22} />
-                    <h3>いつもの記入を、AIに。</h3>
-                    <p>
-                      登録した名前・住所・口座情報を、書類の記入欄へ自動配置します。
-                    </p>
-                    <button
-                      className="secondary full"
-                      disabled={!pdf || signedInput}
-                      onClick={() => {
-                        setAiOpen(true);
-                        setAiResult(null);
-                      }}
-                    >
-                      AI自動記入を試す
-                    </button>
-                  </div>
-                </>
-              )}
-              {pdf && !selected && (
-                <>
-                  <div className="section-divider" />
-                  <h3>このページの操作</h3>
-                  <fieldset className="page-actions" disabled={signedInput}>
-                    <button
-                      title="左へ移動"
-                      aria-label="ページを前へ"
-                      disabled={pageIndex === 0 || !!busy}
-                      onClick={() => {
-                        const current = flushInlineText();
-                        const p = [...current.pages];
-                        [p[pageIndex - 1], p[pageIndex]] = [
-                          p[pageIndex],
-                          p[pageIndex - 1],
-                        ];
-                        commit({ ...current, pages: p });
-                      }}
-                    >
-                      <ArrowUp size={17} />
-                    </button>
-                    <button
-                      aria-label="ページを後ろへ"
-                      disabled={pageIndex === edits.pages.length - 1 || !!busy}
-                      onClick={() => {
-                        const current = flushInlineText();
-                        const p = [...current.pages];
-                        [p[pageIndex + 1], p[pageIndex]] = [
-                          p[pageIndex],
-                          p[pageIndex + 1],
-                        ];
-                        commit({ ...current, pages: p });
-                      }}
-                    >
-                      <ArrowDown size={17} />
-                    </button>
-                    <button
-                      aria-label="ページを右に回転"
-                      disabled={!!busy}
-                      onClick={() => {
-                        const current = flushInlineText();
-                        commit({
-                          ...current,
-                          pages: current.pages.map((p) =>
-                            p.id === page.id
-                              ? { ...p, rotation: (p.rotation + 90) % 360 }
-                              : p,
-                          ),
-                        });
-                      }}
-                    >
-                      <RotateCw size={17} />
-                    </button>
-                    <button
-                      aria-label="ページを削除"
-                      disabled={edits.pages.length === 1 || !!busy}
-                      onClick={() => deletePage(page.id)}
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                  </fieldset>
-                </>
-              )}
+              ) : page ? (
+                <dl className="page-info">
+                  <div><dt>表示中</dt><dd>{pageIndex + 1} / {edits.pages.length} ページ</dd></div>
+                  <div><dt>用紙サイズ</dt><dd>{Math.round(shownPageWidth)} × {Math.round(shownPageHeight)} pt</dd></div>
+                  <div><dt>向き</dt><dd>{shownPageWidth > shownPageHeight ? "横" : shownPageWidth < shownPageHeight ? "縦" : "正方形"}</dd></div>
+                  <div><dt>回転</dt><dd>{page.rotation}°</dd></div>
+                </dl>
+              ) : null}
             </div>
-          </aside>
+          </aside>}
         </div>
         <footer className="status-bar">
           <div>
