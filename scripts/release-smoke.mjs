@@ -131,12 +131,16 @@ try {
   await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });
   await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
   await page.getByRole('button', { name: 'ペン', exact: true }).click();
-  const surface = await page.getByTestId('pdf-surface').boundingBox();
+  const inkLayer = page.getByTestId('ink-input-layer');
+  await expect(inkLayer).toBeVisible();
+  const surface = await inkLayer.boundingBox();
   if (!surface) throw new Error('手書き用のPDFが表示されていません。');
-  await page.mouse.move(surface.x + 100, surface.y + 250);
+  // Keep both ends inside the visible top of a short CI display.
+  await page.mouse.move(surface.x + 40, surface.y + 60);
   await page.mouse.down();
-  await page.mouse.move(surface.x + 200, surface.y + 280, { steps: 8 });
+  await page.mouse.move(surface.x + 130, surface.y + 90, { steps: 8 });
   await page.mouse.up();
+  console.log(JSON.stringify({ stage: 'pen-drag-complete', platform: process.platform, inkAnnotations: await page.getByRole('button', { name: /^ペン:/ }).count() }));
   await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
   console.log(JSON.stringify({ stage: 'pen-rendered', platform: process.platform }));
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
