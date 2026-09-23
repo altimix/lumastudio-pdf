@@ -16,6 +16,7 @@ try {
   });
   const response = await desktop.goto(site, { waitUntil: 'networkidle' });
   assert.equal(response?.status(), 200);
+  assert.match((await response.headers())['cache-control'] || '', /(?:^|,)\s*no-transform(?:,|$)/i);
   assert.match(await desktop.title(), /LumaStudio PDF.*安藤昇/);
   assert.equal(await desktop.locator('html').getAttribute('lang'), 'ja');
   assert.equal(await desktop.getByRole('heading', { level: 1 }).count(), 1);
@@ -73,9 +74,11 @@ try {
   }
   const robots = await (await fetch(new URL('/robots.txt', origin))).text();
   assert.match(robots, /Sitemap: https:\/\/lumastudiopdf\.altimix\.jp\/sitemap\.xml/);
-  const privacy = await (await fetch(new URL('/privacy/', origin))).text();
+  const privacyResponse = await fetch(new URL('/privacy/', origin));
+  const privacy = await privacyResponse.text();
   assert.match(privacy, /AIを明示実行した場合/);
   assert.match(privacy, /https:\/\/altimix\.co\.jp\/contact\//);
+  assert.match(privacyResponse.headers.get('cache-control') || '', /(?:^|,)\s*no-transform(?:,|$)/i);
   const sitemap = await (await fetch(new URL('/sitemap.xml', origin))).text();
   assert.match(sitemap, /<loc>https:\/\/lumastudiopdf\.altimix\.jp\/<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/lumastudiopdf\.altimix\.jp\/privacy\/<\/loc>/);
