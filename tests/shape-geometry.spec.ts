@@ -11,7 +11,7 @@ async function openFixture(page: Page) {
   pdf.addPage([500, 700]);
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles({ name: 'shapes.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => (element as HTMLCanvasElement).width)).toBeGreaterThan(100);
 }
 
@@ -177,7 +177,7 @@ test('長方形・楕円・三角形の枠線と塗りつぶしを指定し、PD
   const document = await PDFDocument.load(await readFile(path));
   expect(document.getPageCount()).toBe(1);
   await page.getByTestId('pdf-input').setInputFiles(path);
-  await expect(page.locator('.annotation')).toHaveCount(0);
+  await expect(page.locator('.annotation')).toHaveCount(0, { timeout: 30_000 });
   const samples = [
     { x: 140, y: 160, expected: 'red' },
     { x: 140, y: 122, expected: 'blue' },

@@ -81,11 +81,17 @@ try {
   await input.fill('同梱フォントの確認');
   await input.press('ControlOrMeta+Enter');
   await expect(page.getByRole('button', { name: '文字: 同梱フォントの確認', exact: true }).locator('img')).toHaveAttribute('src', /^data:image\/png/);
-  assert.equal(await page.evaluate(() => {
+  const fontState = await page.evaluate(() => {
     const faces = [];
     document.fonts.forEach((face) => { if (face.family.includes('Noto Sans JP Variable')) faces.push(face); });
-    return faces.length > 0 && faces.every(face => face.status === 'loaded');
-  }), true);
+    return {
+      total: faces.length,
+      loaded: faces.filter(face => face.status === 'loaded').length,
+      textReady: document.fonts.check('normal 400 11px "Noto Sans JP Variable"', '同梱フォントの確認'),
+    };
+  });
+  assert.ok(fontState.total > 50 && fontState.loaded > 0 && fontState.loaded < fontState.total / 2 && fontState.textReady,
+    'Only the Japanese font subsets used by the sample text should be loaded.');
   assert.ok(fontRequests.length > 0 && fontRequests.every(url => url.startsWith('file:')), 'Fonts must load from the packaged application.');
   await page.getByRole('button', { name: '図形', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });
@@ -94,8 +100,17 @@ try {
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await expect(page.locator('.unsaved')).toHaveCount(0);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const sealSize = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await sealSize.fill('44');
+  await sealSize.press('Enter');
+  await page.reload();
+  await page.getByRole('button', { name: 'サンプルの書類で試す' }).click();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(sealSize).toHaveValue('44');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
   if (application) await application.close();
 }

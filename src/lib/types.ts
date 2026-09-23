@@ -20,6 +20,8 @@ export interface Annotation {
   color?: string
   dataUrl?: string
   stampShape?: 'circle' | 'square'
+  /** Imported seal image, distinct from a general image on the page. */
+  stampSource?: true
   shapeKind?: ShapeKind
   strokeColor?: string
   fillColor?: string

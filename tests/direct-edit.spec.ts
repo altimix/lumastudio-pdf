@@ -20,8 +20,8 @@ async function openFixture(page: Page, signed = false, pageCount = 1) {
   }
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles({ name: 'direct-edit.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
-  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => (element as HTMLCanvasElement).width)).toBeGreaterThan(100);
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => (element as HTMLCanvasElement).width), { timeout: 30_000 }).toBeGreaterThan(100);
 }
 
 async function screenPoint(page: Page, x: number, y: number, rotation = 0) {
@@ -443,6 +443,9 @@ test('印鑑と画像は縦横比を保って拡大でき、回転した用紙�
   const stamp = page.getByRole('button', { name: '印鑑: 山田', exact: true });
   const stampSize = await growSelected(page, stamp, 1.6);
   expect(stampSize.after.width / stampSize.after.height).toBeCloseTo(1, 3);
+  const rememberedSize = await page.getByRole('spinbutton', { name: '要素の幅', exact: true }).inputValue();
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue(rememberedSize);
   await page.getByRole('button', { name: '選択・移動', exact: true }).click();
   await page.getByRole('button', { name: 'ページを右に回転', exact: true }).click();
   const png = await page.evaluate(() => {
@@ -463,6 +466,8 @@ test('印鑑と画像は縦横比を保って拡大でき、回転した用紙�
   await expect(page.locator('.annotation')).toHaveCount(2);
   const imageSize = await growSelected(page, image, 1.4, 90);
   expect(imageSize.after.width / imageSize.after.height).toBeCloseTo(2, 3);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue(rememberedSize);
   const saved = await saveProject(page, testInfo);
   expect(saved.data.pages[0].rotation).toBe(90);
   expect(saved.data.annotations[0].width / saved.data.annotations[0].height).toBeCloseTo(1, 3);

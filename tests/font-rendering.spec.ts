@@ -79,8 +79,10 @@ test('同梱4書体を外部通信なしで読み込み、字体・太字・斜�
   expect(new Set(result.hashes).size).toBe(4)
   expect(new Set([result.hashes[0], ...result.styled]).size).toBe(4)
   expect(result.faces).toBeGreaterThan(400)
-  expect(result.unloaded).toBe(0)
-  expect(fonts.length).toBeGreaterThan(400)
+  expect(result.unloaded).toBeGreaterThan(result.faces / 2)
+  expect(result.unloaded).toBeLessThan(result.faces)
+  expect(fonts.length).toBeGreaterThan(0)
+  expect(fonts.length).toBeLessThan(result.faces / 2)
   expect(external).toEqual([])
 })
 

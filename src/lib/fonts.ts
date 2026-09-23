@@ -36,29 +36,31 @@ export function textFontCss(annotation: TextStyle, sizeOverride?: number): strin
   return `${annotation.fontStyle || 'normal'} ${annotation.fontWeight || 400} ${sizeOverride ?? annotation.fontSize ?? 16}px ${fontCssFamily(annotation.fontFamily)}`
 }
 
-const familyLoads = new WeakMap<FontFaceSet, Map<string, Promise<void>>>()
-const loadedFamilies = new WeakMap<FontFaceSet, Set<string>>()
+const textLoads = new WeakMap<FontFaceSet, Map<string, Promise<void>>>()
+const fallbackTexts = new WeakMap<FontFaceSet, Set<string>>()
+const FALLBACK_SAMPLE = '日本語 ABC 123'
+const requestedText = (annotation: Partial<Pick<Annotation, 'text'>>) => annotation.text || FALLBACK_SAMPLE
+const requestKey = (annotation: TextStyle & Partial<Pick<Annotation, 'text'>>) => `${textFontCss(annotation)}\u0000${requestedText(annotation)}`
 
-export function isTextFontReady(annotation: TextStyle): boolean {
+export function isTextFontReady(annotation: TextStyle & Partial<Pick<Annotation, 'text'>>): boolean {
   if (!annotation.fontFamily || annotation.fontFamily === 'legacy') return true
   if (typeof document === 'undefined' || !document.fonts) return false
+  const fonts = document.fonts
+  if (fallbackTexts.get(fonts)?.has(requestKey(annotation))) return true
   const family = FAMILY_NAMES[annotation.fontFamily]
-  if (loadedFamilies.get(document.fonts)?.has(family)) return true
-  // Another module instance (e.g. a development hot update) can have loaded
-  // the same FontFaceSet already. Read the actual faces instead of its cache.
-  let found = false, ready = true
-  document.fonts.forEach((face) => {
+  let found = false, loaded = false
+  fonts.forEach((face) => {
     if (face.family.replace(/^["']|["']$/g, '') !== family) return
     found = true
-    if (face.status !== 'loaded') ready = false
+    if (face.status === 'loaded') loaded = true
   })
-  return found && ready
+  return found && loaded && fonts.check(textFontCss(annotation), requestedText(annotation))
 }
 
 /**
- * All files come from the application's local bundle. Load every Unicode subset
- * of the chosen face, so characters typed later by an IME can be measured
- * synchronously without briefly falling back to a different system font.
+ * Fontsource divides Japanese fonts into many Unicode subsets. Ask the browser
+ * for the subsets used by this text instead of decoding the entire family;
+ * the same local faces are used again for PDF export.
  */
 export async function ensureTextFont(annotation: TextStyle & Pick<Annotation, 'text'>): Promise<void> {
   const id = annotation.fontFamily
@@ -72,43 +74,43 @@ export async function ensureTextFont(annotation: TextStyle & Pick<Annotation, 't
     return
   }
   const family = FAMILY_NAMES[id]
-  let loads = familyLoads.get(fonts)
+  let found = false
+  fonts.forEach((face) => {
+    if (face.family.replace(/^["']|["']$/g, '') === family) found = true
+  })
+  if (!found) throw new Error('同梱フォントが見つかりません。アプリを再起動してください。')
+  if (isTextFontReady(annotation)) return
+  const faceCss = textFontCss(annotation)
+  const text = requestedText(annotation)
+  const key = requestKey(annotation)
+  let loads = textLoads.get(fonts)
   if (!loads) {
     loads = new Map()
-    familyLoads.set(fonts, loads)
+    textLoads.set(fonts, loads)
   }
-  let pending = loads.get(family)
+  let pending = loads.get(key)
   if (!pending) {
     pending = (async () => {
-      const faces: FontFace[] = []
-      fonts.forEach((face) => {
-        if (face.family.replace(/^["']|["']$/g, '') === family) faces.push(face)
-      })
-      if (!faces.length) throw new Error('同梱フォントが見つかりません。アプリを再起動してください。')
-      // Keep font decoding and local HTTP/file I/O bounded. Dispatching every
-      // CJK subset at once can starve the renderer and PDF worker on slow hosts.
-      let next = 0
-      let failed = false
-      const loadNext = async () => {
-        while (!failed && next < faces.length) {
-          const face = faces[next++]
-          try { await face.load() }
-          catch (error) { failed = true; throw error }
-        }
+      const faces = await fonts.load(faceCss, text)
+      if (!fonts.check(faceCss, text))
+        throw new Error('同梱フォントを読み込めませんでした。アプリを再起動してから、もう一度お試しください。')
+      // Unsupported glyphs (notably emoji) are deliberately rendered with
+      // the browser's system fallback instead of blocking preview and save.
+      if (!faces.some((face) => face.family.replace(/^["']|["']$/g, '') === family)) {
+        let ready = fallbackTexts.get(fonts)
+        if (!ready) { ready = new Set(); fallbackTexts.set(fonts, ready) }
+        if (ready.size >= 256) ready.clear()
+        ready.add(key)
       }
-      await Promise.all(Array.from({ length: Math.min(6, faces.length) }, loadNext))
-      const ready = loadedFamilies.get(fonts) || new Set<string>()
-      ready.add(family)
-      loadedFamilies.set(fonts, ready)
     })()
-    loads.set(family, pending)
-    pending.catch(() => { if (loads.get(family) === pending) loads.delete(family) })
+    loads.set(key, pending)
+    void pending.then(
+      () => { if (loads.get(key) === pending) loads.delete(key) },
+      () => { if (loads.get(key) === pending) loads.delete(key) },
+    )
   }
   try {
     await pending
-    // Verify the actual style/text too. Italic is synthesized by the browser for
-    // these Japanese families, identically in the editor and the exported raster.
-    await fonts.load(textFontCss(annotation), annotation.text || '日本語 ABC 123')
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('同梱フォント')) throw error
     throw new Error('同梱フォントを読み込めませんでした。アプリを再起動してから、もう一度お試しください。')
@@ -148,4 +150,12 @@ export function measureTextHeight(annotation: TextLayout & Pick<Annotation, 'und
   const height = Math.max(fontSize * 1.4 + 6, lines.length * fontSize * 1.4 + 6)
   if (!annotation.underline || !lines.at(-1)) return height
   return Math.max(height, 4 + (lines.length - 1) * fontSize * 1.4 + underlineOffset(context, lines.at(-1)!, fontSize) + Math.max(0.6, fontSize / 16) / 2)
+}
+
+/** Refit after the requested glyphs arrive, including an immediate IME commit. */
+export async function resolveTextGeometry(annotation: Annotation, pageHeight: number): Promise<Annotation> {
+  if (annotation.type !== 'text') return annotation
+  await ensureTextFont(annotation)
+  const height = Math.min(pageHeight - annotation.y, Math.max(annotation.height, measureTextHeight(annotation)))
+  return height === annotation.height ? annotation : { ...annotation, height }
 }

@@ -3,7 +3,7 @@ import type { PDFObject } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { Annotation, PageInfo } from './types'
-import { ensureTextFont, fontCssFamily, textFontCss, underlineOffset, wrapTextLines } from './fonts'
+import { ensureTextFont, fontCssFamily, resolveTextGeometry, textFontCss, underlineOffset, wrapTextLines } from './fonts'
 
 export type { Annotation, PageInfo } from './types'
 
@@ -516,7 +516,10 @@ export async function exportPdf(originalBytes: Uint8Array, pages: PageInfo[], an
     const page = copied[index]
     const transform = info.viewportTransform || fallbackTransform(page)
     const originalRotation = page.getRotation().angle
-    for (const annotation of annotations.filter((item) => item.pageId === info.id)) {
+    for (const item of annotations.filter((annotation) => annotation.pageId === info.id)) {
+      // A user can commit new glyphs before the background font load finishes.
+      // Resolve their true height before placing the raster on the output PDF.
+      const annotation = await resolveTextGeometry(item, info.height)
       const dataUrl = await annotationToDataUrl(annotation)
       const image = /^data:image\/jpe?g[;,]/i.test(dataUrl) ? await output.embedJpg(dataUrl) : await output.embedPng(dataUrl)
       const placement = annotationPlacement(annotation, transform)

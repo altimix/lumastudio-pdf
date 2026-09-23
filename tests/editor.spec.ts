@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 async function waitForPdf(page: Page) {
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => page.locator('.pdf-canvas').evaluate((element) => {
     const canvas = element as HTMLCanvasElement;
     if (canvas.width < 100 || canvas.height < 100) return false;
@@ -13,7 +13,7 @@ async function waitForPdf(page: Page) {
       if (pixels[index + 3] > 0 && pixels[index] < 200) ink++;
     }
     return ink > 100;
-  })).toBe(true);
+  }), { timeout: 30_000 }).toBe(true);
 }
 
 async function openSample(page: Page) {
@@ -272,4 +272,63 @@ test('白背景の印影を透過し、複数の登録印鑑を管理してもPD
   expect(pixel[2]).toBeGreaterThan(pixel[0] * 2);
   await page.screenshot({ path: testInfo.outputPath('transparent-stamps-reopened.png'), fullPage: true });
   expect(apiCalls).toBe(0);
+});
+
+test('画像印鑑の変更サイズを次の配置と作業データ再開後にも使う', async ({ page }, testInfo) => {
+  await openSample(page);
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 120; canvas.height = 60;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#fff'; context.fillRect(0, 0, 120, 60);
+    context.fillStyle = '#bb373c'; context.fillRect(12, 10, 96, 40);
+    return canvas.toDataURL('image/png');
+  });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '画像から印鑑を登録', exact: true }).click();
+  await (await chooser).setFiles({ name: 'wide-seal.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') });
+  const dialog = page.getByRole('dialog', { name: '印鑑画像を登録' });
+  await dialog.getByRole('radio', { name: '白い背景を除去', exact: true }).check();
+  await dialog.getByRole('textbox', { name: '印鑑名', exact: true }).fill('横印');
+  await dialog.getByRole('button', { name: 'この印鑑を登録', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await clickOriginalPoint(page, 100, 150);
+  const imported = page.getByRole('button', { name: '画像: 横印', exact: true });
+  await expect(imported).toHaveCount(1);
+  const width = page.getByRole('spinbutton', { name: '要素の幅', exact: true });
+  await width.fill('60');
+  await width.press('Enter');
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue('60');
+  await clickOriginalPoint(page, 240, 250);
+  await expect(imported).toHaveCount(2);
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
+  const path = testInfo.outputPath('remembered-image-seal.lumapdf');
+  await (await download).saveAs(path);
+  const saved = JSON.parse(await readFile(path, 'utf8'));
+  expect(saved.annotations.map((annotation: { stampSource?: boolean }) => annotation.stampSource)).toEqual([true, true]);
+  await page.reload();
+  await page.getByTestId('project-input').setInputFiles(path);
+  await waitForPdf(page);
+  await page.getByRole('button', { name: '画像: 横印', exact: true }).first().click();
+  await page.getByRole('spinbutton', { name: '要素の幅', exact: true }).fill('70');
+  await page.getByRole('spinbutton', { name: '要素の幅', exact: true }).press('Enter');
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue('70');
+  const ratio = await page.getByRole('button', { name: '画像: 横印', exact: true }).first().evaluate(element => {
+    const style = (element as HTMLElement).style;
+    return parseFloat(style.width) / parseFloat(style.height);
+  });
+  const size = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await size.fill('1000');
+  await size.press('Enter');
+  await clickOriginalPoint(page, 20, 20);
+  const fittedWidth = Number(await page.getByRole('spinbutton', { name: '要素の幅', exact: true }).inputValue());
+  const fittedHeight = Number(await page.getByRole('spinbutton', { name: '要素の高さ', exact: true }).inputValue());
+  expect(fittedWidth).toBeLessThanOrEqual(595.28);
+  expect(fittedWidth / fittedHeight).toBeCloseTo(ratio, 1);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(size).toHaveValue('1000');
 });

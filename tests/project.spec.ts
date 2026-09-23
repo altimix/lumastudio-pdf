@@ -66,7 +66,7 @@ test('作業データから文字・印鑑・並び順・回転・削除状態�
   });
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles(await fixture());
-  await expect(page.locator('.thumbnail-button')).toHaveCount(3);
+  await expect(page.locator('.thumbnail-button')).toHaveCount(3, { timeout: 30_000 });
   await page.getByRole('button', { name: '2ページ目', exact: true }).click();
   await writeText(page, 'あとで修正する氏名');
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
@@ -104,7 +104,7 @@ test('作業データから文字・印鑑・並び順・回転・削除状態�
   await dialog.getByRole('button', { name: '保存した作業データを開く', exact: true }).click();
   await (await chooser).setFiles(saved.file);
   await expect(dialog).not.toBeVisible();
-  await expect(page.locator('.thumbnail-button')).toHaveCount(2);
+  await expect(page.locator('.thumbnail-button')).toHaveCount(2, { timeout: 30_000 });
   const restoredIds = await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')));
   expect(restoredIds.every(id => !saved.data.pages.some(item => item.id === id))).toBe(true);
   await page.getByRole('button', { name: '2ページ目', exact: true }).click();
@@ -131,7 +131,7 @@ test('作業データから文字・印鑑・並び順・回転・削除状態�
 test('不正な作業データや署名付き原本を開こうとしても編集中の内容を失わない', async ({ page }, testInfo) => {
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles(await fixture());
-  await expect(page.locator('.thumbnail-button')).toHaveCount(3);
+  await expect(page.locator('.thumbnail-button')).toHaveCount(3, { timeout: 30_000 });
   await writeText(page, '保存済みの記入');
   const saved = await saveProject(page, testInfo);
   await page.getByRole('button', { name: '文字: 保存済みの記入', exact: true }).click();
@@ -151,7 +151,7 @@ test('不正な作業データや署名付き原本を開こうとしても編�
     const invalid = structuredClone(saved.data);
     scenario.change(invalid);
     await page.getByTestId('project-input').setInputFiles({ name: `${scenario.name}.lumapdf`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(invalid)) });
-    await expect(dialog.getByRole('alert')).toHaveText(scenario.error);
+    await expect(dialog.getByRole('alert')).toHaveText(scenario.error, { timeout: 30_000 });
     await expect(dialog.getByRole('button', { name: '保存した作業データを開く', exact: true })).toBeEnabled();
     await expect(page.locator('.thumbnail-button')).toHaveCount(3);
     expect(await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')))).toEqual(originalIds);

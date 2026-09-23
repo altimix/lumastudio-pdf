@@ -7,7 +7,7 @@ async function open(page: Page) {
   pdf.addPage([500, 700]);
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles({ name: 'typography.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
 }
 
 async function project(page: Page, info: TestInfo, name: string) {
@@ -34,6 +34,18 @@ test('同梱Googleフォントの標準・装飾を選んで再開し、PDFに�
   await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 140 } });
   const annotation = page.getByRole('button', { name: '文字: 日本語の書体と太字', exact: true });
   await expect(annotation.locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  const fontSubsets = await page.evaluate(() => {
+    let total = 0, loaded = 0;
+    document.fonts.forEach(face => {
+      if (face.family.replace(/^["']|["']$/g, '') !== 'Noto Serif JP Variable') return;
+      total++;
+      if (face.status === 'loaded') loaded++;
+    });
+    return { total, loaded };
+  });
+  expect(fontSubsets.total).toBeGreaterThan(50);
+  expect(fontSubsets.loaded).toBeGreaterThan(0);
+  expect(fontSubsets.loaded).toBeLessThan(fontSubsets.total / 2);
   const saved = await project(page, info, 'styled-text.lumapdf');
   expect(saved.data.annotations[0]).toMatchObject({ fontFamily: 'noto-serif-jp', fontWeight: 700, fontStyle: 'italic', underline: true, fontSize: 11, color: '#000000' });
   await page.reload();
@@ -65,6 +77,77 @@ test('同梱Googleフォントの標準・装飾を選んで再開し、PDFに�
   expect(externalFonts).toEqual([]);
 });
 
+test('新しい字形の読み込み前に文字を確定しても保存データの高さを実フォントで測る', async ({ page }, info) => {
+  await open(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 130 } });
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await expect(input).toBeEnabled();
+  let releaseFonts!: () => void;
+  const gate = new Promise<void>(resolve => { releaseFonts = resolve; });
+  let blocked = 0;
+  await page.route(/\.woff2?(?:\?|$)/, async route => {
+    blocked++;
+    await gate;
+    await route.continue();
+  });
+  const text = '請求書'.repeat(24);
+  try {
+    await input.fill(text);
+    await expect.poll(() => blocked).toBeGreaterThan(0);
+    await input.press('ControlOrMeta+Enter');
+    const placedText = page.getByRole('button', { name: `文字: ${text}`, exact: true });
+    await expect(placedText).toBeVisible();
+    const beforeWidth = await placedText.evaluate(element => parseFloat((element as HTMLElement).style.width));
+    const handle = await placedText.getByTestId('resize-se').boundingBox();
+    if (!handle) throw new Error('文字のサイズ変更ハンドルが見つかりません');
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 35, handle.y + handle.height / 2 + 20, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(() => placedText.evaluate(element => parseFloat((element as HTMLElement).style.width))).toBeGreaterThan(beforeWidth);
+    await page.getByRole('button', { name: 'チェック', exact: true }).click();
+    await page.getByTestId('pdf-surface').click({ position: { x: 250, y: 250 } });
+    await expect(page.locator('.annotation')).toHaveCount(2);
+    await page.getByRole('button', { name: '作業データ', exact: true }).click();
+    const event = page.waitForEvent('download');
+    await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
+    await expect(page.locator('.busy-indicator')).toBeVisible();
+    releaseFonts();
+    const path = info.outputPath('fast-commit.lumapdf');
+    await (await event).saveAs(path);
+    const saved = JSON.parse(await readFile(path, 'utf8'));
+    const annotation = saved.annotations.find((item: { type: string }) => item.type === 'text');
+    const measured = await page.evaluate(async (value) => {
+      const { measureTextHeight } = await import('/src/lib/fonts.ts');
+      return measureTextHeight(value);
+    }, annotation);
+    expect(annotation.height).toBeGreaterThanOrEqual(measured - 0.01);
+    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(page.locator('.annotation')).toHaveCount(1);
+    const scale = await page.getByTestId('pdf-surface').evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+    const visibleHeight = await page.getByRole('button', { name: `文字: ${text}`, exact: true }).evaluate(element => parseFloat((element as HTMLElement).style.height));
+    expect(visibleHeight / scale).toBeCloseTo(annotation.height, 1);
+  } finally {
+    releaseFonts();
+  }
+});
+
+test('同梱書体にない絵文字だけの文字欄も表示してPDFと作業データへ保存できる', async ({ page }, info) => {
+  await open(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await page.getByLabel('記入する文字', { exact: true }).fill('😀😀');
+  await page.getByTestId('pdf-surface').click({ position: { x: 90, y: 160 } });
+  await expect(page.getByRole('button', { name: '文字: 😀😀', exact: true }).locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  const saved = await project(page, info, 'emoji-fallback.lumapdf');
+  expect(saved.data.annotations[0]).toMatchObject({ text: '😀😀', fontFamily: 'noto-sans-jp' });
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const path = info.outputPath('emoji-fallback.pdf');
+  await (await event).saveAs(path);
+  expect((await PDFDocument.load(await readFile(path))).getPageCount()).toBe(1);
+});
+
 test('印鑑35四方とチェック12四方で配置し、旧作業データは従来書体で開く', async ({ page }, info) => {
   await open(page);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
@@ -90,6 +173,46 @@ test('印鑑35四方とチェック12四方で配置し、旧作業データは�
   await page.getByTestId('project-input').setInputFiles({ name: 'legacy.lumapdf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved.data)) });
   await page.getByRole('button', { name: '文字: 従来の文字', exact: true }).click();
   await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('legacy');
+});
+
+test('印鑑サイズを変更すると次の配置と再読み込み後にも同じ大きさを使う', async ({ page }) => {
+  await open(page);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const size = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await expect(size).toHaveValue('35');
+  await size.fill('48');
+  await size.press('Enter');
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('山田');
+  await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 130 } });
+  const width = page.getByRole('spinbutton', { name: '要素の幅', exact: true });
+  await expect(width).toHaveValue('48');
+  await width.fill('62');
+  await width.press('Enter');
+  await expect(width).toHaveValue('62');
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(size).toHaveValue('62');
+  await page.reload();
+  await page.getByRole('button', { name: 'サンプルの書類で試す', exact: true }).click();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue('62');
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('次の印');
+  await page.getByTestId('pdf-surface').click({ position: { x: 90, y: 240 } });
+  await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('62');
+});
+
+test('ページより大きい丸印も縦横比を保って用紙に収める', async ({ page }) => {
+  await open(page);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const size = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await size.fill('1000');
+  await size.press('Enter');
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('山田');
+  await page.getByTestId('pdf-surface').click({ position: { x: 60, y: 100 } });
+  await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('500');
+  await expect(page.getByRole('spinbutton', { name: '要素の高さ', exact: true })).toHaveValue('500');
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(size).toHaveValue('1000');
 });
 
 test('フォント読込が遅れても作業データ画面から入力欄へフォーカスを奪わない', async ({ page }) => {

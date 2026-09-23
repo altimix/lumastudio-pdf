@@ -16,34 +16,41 @@ describe('bundled text fonts', () => {
     expect(textFontCss({ fontFamily: 'noto-serif-jp', fontSize: 11, fontWeight: 700, fontStyle: 'italic' })).toBe('italic 700 11px "Noto Serif JP Variable", serif')
   })
 
-  it('waits for every Japanese subset in the selected family, then checks the exact styled text', async () => {
+  it('shares a pending request for the exact text and loads new glyphs on demand', async () => {
     let completeSubset!: () => void
-    const first = { family: '"Noto Sans JP Variable"', load: vi.fn(async () => undefined) }
-    const uncommon = { family: 'Noto Sans JP Variable', load: vi.fn(() => new Promise<void>((resolve) => { completeSubset = resolve })) }
-    const other = { family: 'Noto Serif JP Variable', load: vi.fn(async () => undefined) }
+    const first = { family: '"Noto Sans JP Variable"', status: 'unloaded' }
+    const uncommon = { family: 'Noto Sans JP Variable', status: 'unloaded' }
+    const other = { family: 'Noto Serif JP Variable', status: 'unloaded' }
+    const ready = new Set<string>()
     const fonts = {
-      forEach: (visit: (face: { family: string; load: () => Promise<unknown> }) => void) => [first, uncommon, other].forEach(visit),
-      load: vi.fn(async () => []), ready: Promise.resolve(),
+      forEach: (visit: (face: typeof first) => void) => [first, uncommon, other].forEach(visit),
+      check: vi.fn((_css: string, text: string) => ready.has(text)),
+      load: vi.fn(async (_css: string, text: string) => {
+        if (text.includes('髙')) await new Promise<void>((resolve) => { completeSubset = resolve })
+        first.status = 'loaded'
+        ready.add(text)
+        return [first]
+      }), ready: Promise.resolve(),
     }
     vi.stubGlobal('document', { fonts })
     const text = { fontFamily: DEFAULT_FONT_FAMILY, fontSize: 11, fontWeight: 700 as const, text: '髙橋 請求書 ABC' }
     const firstLoad = ensureTextFont(text)
-    const concurrent = ensureTextFont({ ...text, text: '住所' })
+    const concurrent = ensureTextFont(text)
     expect(isTextFontReady(text)).toBe(false)
-    expect(first.load).toHaveBeenCalledTimes(1)
-    expect(uncommon.load).toHaveBeenCalledTimes(1)
-    expect(other.load).not.toHaveBeenCalled()
+    expect(fonts.load).toHaveBeenCalledTimes(1)
     completeSubset()
     await Promise.all([firstLoad, concurrent])
     expect(isTextFontReady(text)).toBe(true)
     expect(fonts.load).toHaveBeenCalledWith(textFontCss(text), text.text)
     await ensureTextFont({ ...text, text: '𠮷田' })
-    expect(uncommon.load).toHaveBeenCalledTimes(1)
+    expect(fonts.load).toHaveBeenCalledTimes(2)
+    expect(other.status).toBe('unloaded')
   })
 
   it('retries a failed local font load and never silently substitutes another face', async () => {
-    const load = vi.fn().mockRejectedValueOnce(new Error('missing asset')).mockResolvedValueOnce(undefined)
-    const fonts = { forEach: (visit: (face: unknown) => void) => visit({ family: 'M PLUS 1 Variable', load }), load: vi.fn(async () => []) }
+    const face = { family: 'M PLUS 1 Variable', status: 'unloaded' }
+    const load = vi.fn().mockRejectedValueOnce(new Error('missing asset')).mockImplementationOnce(async () => { face.status = 'loaded'; return [face] })
+    const fonts = { forEach: (visit: (face: unknown) => void) => visit(face), load, check: () => face.status === 'loaded' }
     vi.stubGlobal('document', { fonts })
     const text = { fontFamily: 'm-plus-1' as const, text: '住所' }
     await expect(ensureTextFont(text)).rejects.toThrow('同梱フォントを読み込めません')
@@ -53,20 +60,40 @@ describe('bundled text fonts', () => {
     expect(isTextFontReady(text)).toBe(true)
   })
 
-  it('bounds concurrent subset loads while still waiting for the complete family', async () => {
-    let active = 0, peak = 0, completed = 0
-    const faces = Array.from({ length: 40 }, () => ({ family: 'Noto Sans JP Variable', load: async () => {
-      active++; peak = Math.max(peak, active)
-      await new Promise(resolve => setTimeout(resolve, 1))
-      active--; completed++
-    } }))
-    const fonts = { forEach: (visit: (face: unknown) => void) => faces.forEach(visit), load: vi.fn(async () => []) }
+  it('leaves unrelated CJK subsets unloaded after requesting Japanese text', async () => {
+    const faces = Array.from({ length: 40 }, () => ({ family: 'Noto Sans JP Variable', status: 'unloaded' }))
+    const loadedText = new Set<string>()
+    const fonts = {
+      forEach: (visit: (face: unknown) => void) => faces.forEach(visit),
+      check: (_css: string, text: string) => loadedText.has(text),
+      load: vi.fn(async (_css: string, text: string) => {
+        faces[0].status = 'loaded'
+        loadedText.add(text)
+        return [faces[0]]
+      }),
+    }
     vi.stubGlobal('document', { fonts })
-    await Promise.all([ensureTextFont({ fontFamily: 'noto-sans-jp' }), ensureTextFont({ fontFamily: 'noto-sans-jp', text: '住所' })])
-    expect(peak).toBeLessThanOrEqual(6)
-    expect(peak).toBeGreaterThan(1)
-    expect(completed).toBe(40)
-    expect(isTextFontReady({ fontFamily: 'noto-sans-jp' })).toBe(true)
+    await ensureTextFont({ fontFamily: 'noto-sans-jp', text: '住所' })
+    expect(fonts.load).toHaveBeenCalledTimes(1)
+    expect(fonts.load).toHaveBeenCalledWith(textFontCss({ fontFamily: 'noto-sans-jp' }), '住所')
+    expect(faces.filter(face => face.status === 'loaded')).toHaveLength(1)
+    expect(isTextFontReady({ fontFamily: 'noto-sans-jp', text: '住所' })).toBe(true)
+    expect(isTextFontReady({ fontFamily: 'noto-sans-jp', text: '請求書' })).toBe(false)
+  })
+
+  it('allows system fallback when the bundled face has no glyph for the text', async () => {
+    const face = { family: 'Noto Sans JP Variable', status: 'unloaded' }
+    const fonts = {
+      forEach: (visit: (face: unknown) => void) => visit(face),
+      check: () => true,
+      load: vi.fn(async () => []),
+    }
+    vi.stubGlobal('document', { fonts })
+    const emoji = { fontFamily: 'noto-sans-jp' as const, text: '😀' }
+    expect(isTextFontReady(emoji)).toBe(false)
+    await expect(ensureTextFont(emoji)).resolves.toBeUndefined()
+    expect(fonts.load).toHaveBeenCalledTimes(1)
+    expect(isTextFontReady(emoji)).toBe(true)
   })
 
   it('fails clearly if the stylesheet or loading API is unavailable', async () => {

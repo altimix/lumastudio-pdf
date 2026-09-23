@@ -12,7 +12,13 @@ function drawingContext() {
     measureText: (text: string) => ({ width: Array.from(text).length * 10 }),
   }
   const canvas = { width: 0, height: 0, getContext: () => context, toDataURL: () => 'data:image/png;base64,test' }
-  const fonts = { ready: Promise.resolve(), forEach: (visit: (face: unknown) => void) => visit({ family: 'Noto Sans JP Variable', load: vi.fn(async () => undefined) }), load: vi.fn(async () => []) }
+  const face = { family: 'Noto Sans JP Variable', status: 'unloaded' }
+  const fonts = {
+    ready: Promise.resolve(),
+    forEach: (visit: (face: unknown) => void) => visit(face),
+    check: () => face.status === 'loaded',
+    load: vi.fn(async () => { face.status = 'loaded'; return [face] }),
+  }
   vi.stubGlobal('document', { createElement: () => canvas, fonts })
   return { context, canvas, fonts }
 }

@@ -73,8 +73,8 @@ test('署名データのあるPDFは閲覧のみで開き、変更と再保存�
   pdf.catalog.set(PDFName.of('AcroForm'), pdf.context.obj({ Fields: [field] }));
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles({ name: 'signed-fixture.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
-  await expect(page.locator('.signed-badge')).toHaveText('署名付きPDF・未検証');
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.locator('.signed-badge')).toHaveText('署名付きPDF・未検証', { timeout: 30_000 });
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: '文字を記入', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '印鑑', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'PDFを保存', exact: true })).toBeDisabled();

@@ -58,6 +58,7 @@ import {
   ensureTextFont,
   isTextFontReady,
   measureTextHeight,
+  resolveTextGeometry,
 } from "./lib/fonts";
 import { NumericField } from "./components/NumericField";
 import {
@@ -118,6 +119,11 @@ function readSaved<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+const STAMP_SIZE_KEY = "luma.stamp-size.v1";
+function readSavedStampSize(): number {
+  const value = readSaved<unknown>(STAMP_SIZE_KEY, 35);
+  return typeof value === "number" && Number.isFinite(value) && value >= 8 && value <= 1000 ? value : 35;
+}
 
 export default function App() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -156,7 +162,7 @@ export default function App() {
   const [stamp, setStamp] = useState<SavedStamp>(() =>
     readSaved("luma.stamp.v1", { name: "", shape: "circle" }),
   );
-  const [stampSize, setStampSize] = useState(35);
+  const [stampSize, setStampSize] = useState(readSavedStampSize);
   const [stampLibrary, setStampLibrary] = useState<SavedStamp[]>(() =>
     readSaved("luma.stamps.v1", []),
   );
@@ -205,6 +211,18 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const placementSettings = useRef({ fontSize, stampSize, strokeWidth });
   placementSettings.current = { fontSize, stampSize, strokeWidth };
+  const rememberStampSize = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    const next = Math.round(Math.max(8, Math.min(1000, value)) * 100) / 100;
+    placementSettings.current.stampSize = next;
+    setStampSize(next);
+    try {
+      localStorage.setItem(STAMP_SIZE_KEY, JSON.stringify(next));
+    } catch {
+      setError("次回起動用の印鑑サイズを保存できませんでした。");
+    }
+  };
+  const isSeal = (annotation: Annotation) => annotation.type === "stamp" || (annotation.type === "image" && annotation.stampSource === true);
   const stateKey = JSON.stringify(edits);
   const dirty =
     !!pdf && (stateKey !== savedState || textEditing || numericEditing);
@@ -296,6 +314,39 @@ export default function App() {
     };
     commit(next);
     setSelectedId(cleared ? null : annotation.id);
+    if (!cleared && annotation.type === "text" && !isTextFontReady(annotation)) {
+      const sheet = current.pages.find((page) => page.id === annotation.pageId);
+      if (sheet) void resolveTextGeometry(annotation, sheet.height)
+        .then(async () => {
+          // A later move, resize, or style edit may have copied this annotation
+          // before its font finished loading. Prepare every matching history
+          // version so Undo/Redo never returns to fallback-font geometry.
+          const versions = history.current.flatMap((entry) => entry.annotations.filter((item) =>
+            item.id === annotation.id && item.type === "text" && item.text === annotation.text,
+          ));
+          await Promise.all(versions.map(ensureTextFont));
+          const active = history.current[cursor.current];
+          history.current = history.current.map((entry) => {
+            let changed = false;
+            const annotations = entry.annotations.map((item) => {
+              if (item.id !== annotation.id || item.type !== "text" || item.text !== annotation.text) return item;
+              const page = entry.pages.find((candidate) => candidate.id === item.pageId);
+              if (!page) return item;
+              const height = Math.min(page.height - item.y, Math.max(item.height, measureTextHeight(item)));
+              if (height === item.height) return item;
+              changed = true;
+              return { ...item, height };
+            });
+            return changed ? { ...entry, annotations } : entry;
+          });
+          const repaired = history.current[cursor.current];
+          if (repaired !== active) {
+            editsRef.current = repaired;
+            setEdits(repaired);
+          }
+        })
+        .catch((error: unknown) => setError(String(error)));
+    }
     return next;
   };
   const flushNumericControls = () => {
@@ -405,6 +456,8 @@ export default function App() {
           a.id === source.id ? updated : a,
         ),
       });
+      if (isSeal(source) && ("width" in change || "height" in change))
+        rememberStampSize(Math.max(updated.width, updated.height));
     };
     if (next.type !== "text" || isTextFontReady(next)) apply();
     else {
@@ -745,16 +798,31 @@ export default function App() {
     }
   };
 
+  const prepareTextGeometry = async (current: EditState): Promise<EditState> => {
+    const annotations = await Promise.all(current.annotations.map((annotation) => {
+      const sheet = current.pages.find((page) => page.id === annotation.pageId);
+      return sheet ? resolveTextGeometry(annotation, sheet.height) : annotation;
+    }));
+    if (annotations.every((annotation, index) => annotation === current.annotations[index])) return current;
+    const prepared = { ...current, annotations };
+    // Geometry correction belongs to the text edit, not a new Undo step.
+    history.current[cursor.current] = prepared;
+    editsRef.current = prepared;
+    setEdits(prepared);
+    return prepared;
+  };
   const save = async () => {
     if (!original.current || busy || signedInput) return;
     const current = flushInlineText();
+    currentRef.current.busy = "PDFを書き出しています";
     setBusy("PDFを書き出しています");
     setError("");
     try {
+      const prepared = await prepareTextGeometry(current);
       const data = await exportPdf(
         original.current,
-        current.pages,
-        current.annotations,
+        prepared.pages,
+        prepared.annotations,
       );
       const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
       if (window.lumaDesktop) {
@@ -770,25 +838,28 @@ export default function App() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
-      setSavedState(JSON.stringify(current));
+      setSavedState(JSON.stringify(prepared));
       notify("記入済みPDFを書き出しました。メールに添付して返送できます。");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存できませんでした。");
     } finally {
+      currentRef.current.busy = "";
       setBusy("");
     }
   };
   const saveProject = async () => {
     if (!original.current || busy || signedInput) return;
     const current = flushInlineText();
+    currentRef.current.busy = "作業データを保存しています";
     setBusy("作業データを保存しています");
     setProjectError("");
     try {
+      const prepared = await prepareTextGeometry(current);
       const bytes = encodeProject({
         filename,
         original: original.current,
-        pages: current.pages,
-        annotations: current.annotations,
+        pages: prepared.pages,
+        annotations: prepared.annotations,
       });
       const name = filename.replace(/\.pdf$/i, "") + ".lumapdf";
       if (window.lumaDesktop) {
@@ -804,7 +875,7 @@ export default function App() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
-      setSavedState(JSON.stringify(current));
+      setSavedState(JSON.stringify(prepared));
       setProjectOpen(false);
       notify("編集を再開できる作業データを保存しました。");
     } catch (e) {
@@ -812,6 +883,7 @@ export default function App() {
         e instanceof Error ? e.message : "作業データを保存できませんでした。",
       );
     } finally {
+      currentRef.current.busy = "";
       setBusy("");
     }
   };
@@ -886,7 +958,9 @@ export default function App() {
       setProjectError(message);
       setError(message);
     } finally {
-      if (candidate && !adopted) await candidate.document.loadingTask.destroy();
+      // Releasing an invalid candidate can wait on a stalled PDF worker.
+      // Keep the original document usable and show the validation error now.
+      if (candidate && !adopted) void candidate.document.loadingTask.destroy().catch(() => {});
       setBusy("");
     }
   };
@@ -1157,8 +1231,14 @@ export default function App() {
       if (stamp.aspectRatio < 1) width *= stamp.aspectRatio;
       else height /= stamp.aspectRatio;
     }
-    width = Math.min(page.width, width);
-    height = Math.min(page.height, height);
+    if (tool === "stamp") {
+      const fit = Math.min(1, page.width / width, page.height / height);
+      width *= fit;
+      height *= fit;
+    } else {
+      width = Math.min(page.width, width);
+      height = Math.min(page.height, height);
+    }
     const annotation: Annotation = {
       id: crypto.randomUUID(),
       pageId: page.id,
@@ -1177,6 +1257,7 @@ export default function App() {
         : {}),
       color: tool === "stamp" ? "#bb373c" : color,
       stampShape: stamp.shape,
+      ...(tool === "stamp" && stamp.dataUrl ? { stampSource: true as const } : {}),
       dataUrl:
         tool === "stamp"
           ? stamp.dataUrl
@@ -1405,6 +1486,7 @@ export default function App() {
           ? { fontFamily, fontWeight, fontStyle, underline }
           : {}),
         stampShape: stamp.shape,
+        ...(p.type === "stamp" && stamp.dataUrl ? { stampSource: true as const } : {}),
         dataUrl: p.type === "stamp" ? stamp.dataUrl : undefined,
       }));
     currentRef.current.busy = "文字の書式を準備しています";
@@ -1872,14 +1954,17 @@ export default function App() {
                   onTextDraftConsumed={() => setTextDraft(null)}
                   onTextEditingChange={setTextEditing}
                   onCommitText={applyText}
-                  onResize={(id, patch) =>
+                  onResize={(id, patch) => {
+                    const source = editsRef.current.annotations.find((a) => a.id === id);
                     commit({
                       ...editsRef.current,
                       annotations: editsRef.current.annotations.map((a) =>
                         a.id === id ? { ...a, ...patch } : a,
                       ),
-                    })
-                  }
+                    });
+                    if (source && isSeal(source))
+                      rememberStampSize(Math.max(patch.width ?? source.width, patch.height ?? source.height));
+                  }}
                   onPlace={place}
                   onSelect={(id) => {
                     flushInlineText();
@@ -2318,12 +2403,9 @@ export default function App() {
                     <NumericField
                       aria-label="印鑑の大きさ"
                       min={8}
-                      max={200}
+                      max={1000}
                       value={stampSize}
-                      onChange={(value) => {
-                        placementSettings.current.stampSize = value;
-                        setStampSize(value);
-                      }}
+                      onChange={rememberStampSize}
                       suffix="pt"
                       disabled={!!busy}
                     />
