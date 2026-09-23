@@ -58,6 +58,7 @@ import {
   ensureTextFont,
   isTextFontReady,
   measureTextHeight,
+  resolveTextGeometry,
 } from "./lib/fonts";
 import { NumericField } from "./components/NumericField";
 import {
@@ -296,6 +297,23 @@ export default function App() {
     };
     commit(next);
     setSelectedId(cleared ? null : annotation.id);
+    if (!cleared && annotation.type === "text" && !isTextFontReady(annotation)) {
+      const sheet = current.pages.find((page) => page.id === annotation.pageId);
+      if (sheet) void resolveTextGeometry(annotation, sheet.height)
+        .then((resolved) => {
+          if (resolved === annotation || currentRef.current.busy) return;
+          const latest = editsRef.current;
+          if (!latest.annotations.some((item) => item === annotation)) return;
+          const repaired = {
+            ...latest,
+            annotations: latest.annotations.map((item) => item === annotation ? resolved : item),
+          };
+          history.current[cursor.current] = repaired;
+          editsRef.current = repaired;
+          setEdits(repaired);
+        })
+        .catch((error: unknown) => setError(String(error)));
+    }
     return next;
   };
   const flushNumericControls = () => {
@@ -745,16 +763,31 @@ export default function App() {
     }
   };
 
+  const prepareTextGeometry = async (current: EditState): Promise<EditState> => {
+    const annotations = await Promise.all(current.annotations.map((annotation) => {
+      const sheet = current.pages.find((page) => page.id === annotation.pageId);
+      return sheet ? resolveTextGeometry(annotation, sheet.height) : annotation;
+    }));
+    if (annotations.every((annotation, index) => annotation === current.annotations[index])) return current;
+    const prepared = { ...current, annotations };
+    // Geometry correction belongs to the text edit, not a new Undo step.
+    history.current[cursor.current] = prepared;
+    editsRef.current = prepared;
+    setEdits(prepared);
+    return prepared;
+  };
   const save = async () => {
     if (!original.current || busy || signedInput) return;
     const current = flushInlineText();
+    currentRef.current.busy = "PDFを書き出しています";
     setBusy("PDFを書き出しています");
     setError("");
     try {
+      const prepared = await prepareTextGeometry(current);
       const data = await exportPdf(
         original.current,
-        current.pages,
-        current.annotations,
+        prepared.pages,
+        prepared.annotations,
       );
       const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
       if (window.lumaDesktop) {
@@ -770,25 +803,28 @@ export default function App() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
-      setSavedState(JSON.stringify(current));
+      setSavedState(JSON.stringify(prepared));
       notify("記入済みPDFを書き出しました。メールに添付して返送できます。");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存できませんでした。");
     } finally {
+      currentRef.current.busy = "";
       setBusy("");
     }
   };
   const saveProject = async () => {
     if (!original.current || busy || signedInput) return;
     const current = flushInlineText();
+    currentRef.current.busy = "作業データを保存しています";
     setBusy("作業データを保存しています");
     setProjectError("");
     try {
+      const prepared = await prepareTextGeometry(current);
       const bytes = encodeProject({
         filename,
         original: original.current,
-        pages: current.pages,
-        annotations: current.annotations,
+        pages: prepared.pages,
+        annotations: prepared.annotations,
       });
       const name = filename.replace(/\.pdf$/i, "") + ".lumapdf";
       if (window.lumaDesktop) {
@@ -804,7 +840,7 @@ export default function App() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
-      setSavedState(JSON.stringify(current));
+      setSavedState(JSON.stringify(prepared));
       setProjectOpen(false);
       notify("編集を再開できる作業データを保存しました。");
     } catch (e) {
@@ -812,6 +848,7 @@ export default function App() {
         e instanceof Error ? e.message : "作業データを保存できませんでした。",
       );
     } finally {
+      currentRef.current.busy = "";
       setBusy("");
     }
   };

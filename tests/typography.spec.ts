@@ -77,6 +77,45 @@ test('同梱Googleフォントの標準・装飾を選んで再開し、PDFに�
   expect(externalFonts).toEqual([]);
 });
 
+test('新しい字形の読み込み前に文字を確定しても保存データの高さを実フォントで測る', async ({ page }, info) => {
+  await open(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 130 } });
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await expect(input).toBeEnabled();
+  let releaseFonts!: () => void;
+  const gate = new Promise<void>(resolve => { releaseFonts = resolve; });
+  let blocked = 0;
+  await page.route(/\.woff2?(?:\?|$)/, async route => {
+    blocked++;
+    await gate;
+    await route.continue();
+  });
+  const text = '請求書'.repeat(24);
+  try {
+    await input.fill(text);
+    await expect.poll(() => blocked).toBeGreaterThan(0);
+    await input.press('ControlOrMeta+Enter');
+    await expect(page.getByRole('button', { name: `文字: ${text}`, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '作業データ', exact: true }).click();
+    const event = page.waitForEvent('download');
+    await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
+    await expect(page.locator('.busy-indicator')).toBeVisible();
+    releaseFonts();
+    const path = info.outputPath('fast-commit.lumapdf');
+    await (await event).saveAs(path);
+    const saved = JSON.parse(await readFile(path, 'utf8'));
+    const annotation = saved.annotations[0];
+    const measured = await page.evaluate(async (value) => {
+      const { measureTextHeight } = await import('/src/lib/fonts.ts');
+      return measureTextHeight(value);
+    }, annotation);
+    expect(annotation.height).toBeGreaterThanOrEqual(measured - 0.01);
+  } finally {
+    releaseFonts();
+  }
+});
+
 test('印鑑35四方とチェック12四方で配置し、旧作業データは従来書体で開く', async ({ page }, info) => {
   await open(page);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();

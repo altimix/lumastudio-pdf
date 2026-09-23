@@ -5,12 +5,14 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   fullyParallel: false,
   workers: 1,
-  // Each project owns a separate browser worker. Windows runners can retain
-  // hundreds of decoded CJK font faces across contexts within one browser;
-  // start the material tests with a fresh process while keeping all 47 cases.
+  // Each project owns a separate browser worker. Keep long PDF and font
+  // workflows in fresh browser processes on shared Windows CI runners.
   projects: [
     { name: 'pdf-workflows', testMatch: /(?:ai-settings|certificate-guide|direct-edit|editor|font-rendering|merge)\.spec\.ts$/ },
-    { name: 'material-editor', testMatch: /(?:numeric-field|project|shape-geometry|signature|typography)\.spec\.ts$/ },
+    { name: 'numeric-fields', testMatch: /numeric-field\.spec\.ts$/ },
+    { name: 'editable-projects', testMatch: /project\.spec\.ts$/ },
+    { name: 'shape-geometry', testMatch: /shape-geometry\.spec\.ts$/ },
+    { name: 'signature-and-typography', testMatch: /(?:signature|typography)\.spec\.ts$/ },
   ],
   // Shared CI Windows hosts can stall during font/worker decoding and tracing.
   // Normal UI assertions remain 10s; only explicit loading waits use 30s.

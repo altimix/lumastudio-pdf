@@ -139,3 +139,11 @@ export function measureTextHeight(annotation: TextLayout & Pick<Annotation, 'und
   if (!annotation.underline || !lines.at(-1)) return height
   return Math.max(height, 4 + (lines.length - 1) * fontSize * 1.4 + underlineOffset(context, lines.at(-1)!, fontSize) + Math.max(0.6, fontSize / 16) / 2)
 }
+
+/** Refit after the requested glyphs arrive, including an immediate IME commit. */
+export async function resolveTextGeometry(annotation: Annotation, pageHeight: number): Promise<Annotation> {
+  if (annotation.type !== 'text') return annotation
+  await ensureTextFont(annotation)
+  const height = Math.min(pageHeight - annotation.y, Math.max(annotation.height, measureTextHeight(annotation)))
+  return height === annotation.height ? annotation : { ...annotation, height }
+}
