@@ -56,7 +56,7 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
         : "利用モデルを保存しました。接続はAI自動記入を実行したときに確認します。");
     } catch {
       setError(
-        "保存できませんでした。APIキーとOSの保管機能を確認してください。",
+        "保存できませんでした。設定の状態とOSの保管機能を確認してください。",
       );
     } finally {
       setBusy(false);
@@ -183,7 +183,7 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
             </p>
             {settings && !settings.canStore && (
               <p className="inline-error">
-                この環境ではAI設定を安全に保存できません。OSの保管機能をご確認ください。
+                この環境ではAPIキーを安全に保存できません。モデルだけの選択は保存できます。
               </p>
             )}
             {settings?.warning && (
@@ -201,7 +201,9 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
               <button
                 className="primary"
                 onClick={save}
-                disabled={busy || !settings?.canStore || (key.trim().length > 0 ? key.trim().length < 20 : model === settings.model)}
+                disabled={busy || !settings || (key.trim().length > 0
+                  ? !settings.canStore || key.trim().length < 20
+                  : model === settings.model || Boolean(settings.warning && settings.hasStoredSettings))}
               >
                 この端末に保存
               </button>

@@ -69,11 +69,11 @@ async function createAiSettings({ directory, safeStorage, createAutofill, envPat
     autofill: (payload) => active.autofill(payload),
     async getSettings() { return { ...status(), canStore: await available() }; },
     save: (input) => exclusive(async () => {
-      if (!(await available())) throw new Error('この環境ではAPIキーを安全に保存できません。OSの保管機能を確認してください。');
       const model = validateModel(input?.model ?? DEFAULT_AI_MODEL);
       if (typeof input?.key !== 'string') throw new Error('APIキーを確認してください。');
       let next, nextEncryptedKey = null;
       if (input.key.trim()) {
+        if (!(await available())) throw new Error('この環境ではAPIキーを安全に保存できません。OSの保管機能を確認してください。');
         const key = validateKey(input.key);
         let encrypted;
         try { encrypted = await encrypt(key); }
@@ -84,6 +84,7 @@ async function createAiSettings({ directory, safeStorage, createAutofill, envPat
         next = active.withModel(model);
         nextEncryptedKey = encryptedKey;
       } else {
+        if (hasStoredSettings && warning) throw new Error('読み込めないAI設定があります。削除してからモデルを保存してください。');
         next = environment.withModel(model);
       }
       try { await write({ version: 2, model, ...(nextEncryptedKey ? { encryptedKey: nextEncryptedKey } : {}) }); }

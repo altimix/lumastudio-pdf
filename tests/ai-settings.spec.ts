@@ -112,14 +112,17 @@ test('環境設定のキーを使いながらモデルの選択だけを保存�
   await expect(dialog.getByLabel('利用モデル', { exact: true })).toHaveValue('gpt-6-sol');
 });
 
-test('OSの暗号化を利用できない環境ではキーの登録を無効にする', async ({ page }) => {
+test('OSの暗号化を利用できない環境でもモデルだけは保存できる', async ({ page }) => {
   await desktopFixture(page, { canStore: false });
   await page.goto('/');
   const dialog = await openSettings(page);
-  await expect(dialog).toContainText('この環境ではAI設定を安全に保存できません');
+  await expect(dialog).toContainText('この環境ではAPIキーを安全に保存できません');
   await expect(dialog.getByLabel('OpenAI APIキー', { exact: true })).toBeDisabled();
   await expect(dialog.getByRole('button', { name: 'この端末に保存', exact: true })).toBeDisabled();
-  expect(await page.evaluate(() => (window as unknown as { aiSettingsTest: { saveCalls: number } }).aiSettingsTest.saveCalls)).toBe(0);
+  await dialog.getByLabel('利用モデル', { exact: true }).selectOption('gpt-6-luna');
+  await dialog.getByRole('button', { name: 'この端末に保存', exact: true }).click();
+  await expect(dialog.getByRole('status')).toContainText('利用モデルを保存しました');
+  expect(await page.evaluate(() => (window as unknown as { aiSettingsTest: { modelOnlySaves: number } }).aiSettingsTest.modelOnlySaves)).toBe(1);
 });
 
 test('保存エラーで機密を含み得る内部エラーを表示せず設定状態を維持する', async ({ page }) => {
@@ -142,6 +145,8 @@ test('暗号化された保存設定を読み込めない場合でも端末か�
   const dialog = await openSettings(page);
   await expect(dialog).toContainText('保存したAI設定を読み込めませんでした');
   await expect(dialog.getByLabel('OpenAI APIキー', { exact: true })).toBeDisabled();
+  await dialog.getByLabel('利用モデル', { exact: true }).selectOption('gpt-6-luna');
+  await expect(dialog.getByRole('button', { name: 'この端末に保存', exact: true })).toBeDisabled();
   const remove = dialog.getByRole('button', { name: '保存したAI設定を削除', exact: true });
   await expect(remove).toBeEnabled();
   await remove.click();

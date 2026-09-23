@@ -71,10 +71,13 @@ describe('Desktop API settings',()=>{
     await settings.save({key:'',model:'gpt-6-luna'});
     expect(JSON.parse(await readFile(path.join(directory,'ai-settings.json'),'utf8'))).toEqual({version:2,model:'gpt-6-luna',encryptedKey:encrypted.toString('base64')});
   });
-  it('rejects unavailable encryption instead of saving plaintext',async()=>{
-    const {directory,settings}=await setup({safeStorage:{...safeStorage,isAsyncEncryptionAvailable:async()=>false}});
+  it('rejects plaintext key storage but permits a model-only preference without encryption',async()=>{
+    const {directory,options,settings}=await setup({safeStorage:{...safeStorage,isAsyncEncryptionAvailable:async()=>false}});
     await expect(settings.save({key:KEY,model:'gpt-6-sol'})).rejects.toThrow('安全に保存');
     await expect(readFile(path.join(directory,'ai-settings.json'))).rejects.toMatchObject({code:'ENOENT'});
+    expect(await settings.save({key:'',model:'gpt-6-luna'})).toMatchObject({available:false,model:'gpt-6-luna',saved:false});
+    expect(JSON.parse(await readFile(path.join(directory,'ai-settings.json'),'utf8'))).toEqual({version:2,model:'gpt-6-luna'});
+    expect((await createAiSettings(options)).getAiStatus().model).toBe('gpt-6-luna');
   });
   it('retains working settings when encryption fails',async()=>{
     const storage={...safeStorage,encryptStringAsync:vi.fn(safeStorage.encryptStringAsync)};
@@ -90,6 +93,8 @@ describe('Desktop API settings',()=>{
     const settings=await createAiSettings(options);
     const status=await settings.getSettings();expect(status.warning).toContain('読み込めません');expect(JSON.stringify(status)).not.toContain(KEY);
     expect(status.hasStoredSettings).toBe(true);
+    await expect(settings.save({key:'',model:'gpt-6-luna'})).rejects.toThrow('読み込めないAI設定');
+    expect(await readFile(path.join(directory,'ai-settings.json'),'utf8')).toBe(KEY);
     await settings.remove();
     expect((await settings.getSettings()).hasStoredSettings).toBe(false);
     await expect(readFile(path.join(directory,'ai-settings.json'))).rejects.toMatchObject({code:'ENOENT'});
