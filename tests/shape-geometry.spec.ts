@@ -62,7 +62,8 @@ async function openProject(page: Page, path: string) {
   const chooser = page.waitForEvent('filechooser');
   await dialog.getByRole('button', { name: '保存した作業データを開く', exact: true }).click();
   await (await chooser).setFiles(path);
-  await expect(dialog).not.toBeVisible();
+  // Reopening starts a fresh PDF worker; wait for this I/O operation to finish.
+  await expect(dialog).not.toBeVisible({ timeout: 30_000 });
 }
 
 test.beforeEach(async ({ context }) => {

@@ -5,7 +5,9 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   fullyParallel: false,
   workers: 1,
-  timeout: 45_000,
+  // Shared CI Windows hosts can stall during font/worker decoding and tracing.
+  // Normal UI assertions remain 10s; only explicit loading waits use 30s.
+  timeout: process.env.CI ? 90_000 : 45_000,
   expect: { timeout: 10_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
