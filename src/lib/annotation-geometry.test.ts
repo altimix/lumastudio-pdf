@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isAspectLocked,
   pointOnPage,
   resizeAnnotation,
   type ResizeCorner,
@@ -45,6 +46,14 @@ describe("shape resize", () => {
     type: "shape",
     shapeKind: "ellipse",
   };
+
+  it('keeps legacy shape resizing free and locks a shape when requested', () => {
+    expect(isAspectLocked(shape)).toBe(false);
+    const locked = { ...shape, aspectLocked: true };
+    const result = { ...locked, ...resizeAnnotation(locked, 'se', { x: 60, y: 0 }, page) };
+    expect(isAspectLocked(locked)).toBe(true);
+    expect(result.width / result.height).toBeCloseTo(shape.width / shape.height, 8);
+  });
 
   it.each<ResizeCorner>(["nw", "ne", "sw", "se"])(
     "stretches axes independently and anchors the opposite %s corner",
@@ -125,6 +134,14 @@ describe("shape resize", () => {
 });
 
 describe("corner resize", () => {
+  it('lets an unlocked image and text change one axis without changing their font size', () => {
+    const image = { ...annotation, aspectLocked: false };
+    expect(isAspectLocked(annotation)).toBe(true);
+    expect(resizeAnnotation(image, 'se', { x: 50, y: 10 }, page)).toMatchObject({ width: 170, height: 70 });
+    const text = { ...annotation, type: 'text' as const, fontSize: 11, aspectLocked: false };
+    expect(resizeAnnotation(text, 'e', { x: 40, y: 0 }, page)).toMatchObject({ width: 160, height: 60 });
+    expect(resizeAnnotation(text, 'e', { x: 40, y: 0 }, page)).not.toHaveProperty('fontSize');
+  });
   it.each<ResizeCorner>(["nw", "ne", "sw", "se"])(
     "preserves aspect and the opposite %s corner",
     (corner) => {

@@ -14,7 +14,7 @@ test('tag must exactly match the package version', () => {
   assert.throws(() => verifyVersion('../x', 'v../x'));
 });
 
-test('requires all expected installers and detects changed downloaded packages', async () => {
+test('requires portable releases and detects changed downloaded packages', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'luma-release-'));
   try {
     await assert.rejects(assetManifest(directory, '0.1.0', 'windows'));
@@ -35,7 +35,7 @@ test('requires all expected installers and detects changed downloaded packages',
       await writeFile(path.join(directory, filename), filename === 'LICENSE.txt' ? await readFile('LICENSE') : `test-only Mac asset ${filename}`);
     }
     const combined = await assetManifest(directory, '0.1.0', 'all');
-    assert.equal(combined.trim().split('\n').length, 8);
+    assert.equal(combined.trim().split('\n').length, 5);
     assert.match(combined, /^[a-f0-9]{64}  LICENSE\.txt$/m);
     assert.match(combined, /^[a-f0-9]{64}  README-Mac\.txt$/m);
     assert.match(combined, /^[a-f0-9]{64}  LumaStudio-PDF-/m);

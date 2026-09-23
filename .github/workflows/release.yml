@@ -1,4 +1,4 @@
-name: Release desktop preview
+name: Release desktop
 
 on:
   push:
@@ -49,14 +49,14 @@ jobs:
             test-results/
             playwright-report/
           if-no-files-found: ignore
-      - name: Package Windows installer and portable preview
+      - name: Package Windows portable app
         if: runner.os == 'Windows'
-        run: npx electron-builder --win nsis portable --x64 --publish never
+        run: npx electron-builder --win portable --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Package Mac Intel and Apple Silicon preview
+      - name: Package Mac Intel and Apple Silicon ZIPs
         if: runner.os == 'macOS'
-        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never
+        run: npx electron-builder --mac zip --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Verify extracted Mac ZIP integrity and included installation guide
@@ -71,7 +71,6 @@ jobs:
           name: Release-${{ matrix.platform }}
           path: |
             release/LumaStudio-PDF-*.exe
-            release/LumaStudio-PDF-*.dmg
             release/LumaStudio-PDF-*.zip
             release/SHA256SUMS-${{ matrix.platform }}.txt
             release/README-Mac.txt
@@ -81,7 +80,7 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish checked preview
+    name: Publish checked release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -99,20 +98,19 @@ jobs:
           pattern: Release-*
           merge-multiple: true
           path: release-assets
-      - name: Verify all six packages and their checksums
+      - name: Verify portable packages and their checksums
         run: node scripts/release-check.mjs assets all release-assets
-      - name: Publish prerelease with installers and SHA256SUMS
+      - name: Publish release with portable packages and SHA256SUMS
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: >-
           gh release create "$RELEASE_TAG"
           release-assets/LumaStudio-PDF-*.exe
-          release-assets/LumaStudio-PDF-*.dmg
           release-assets/LumaStudio-PDF-*.zip
           release-assets/SHA256SUMS.txt
           release-assets/README-Mac.txt
           release-assets/LICENSE.txt
-          --verify-tag --prerelease
-          --title "LumaStudio PDF $RELEASE_TAG — 試用版"
+          --verify-tag
+          --title "LumaStudio PDF $RELEASE_TAG"
           --notes-file "docs/releases/$RELEASE_TAG.md"

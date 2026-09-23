@@ -1,0 +1,5 @@
+.editable-copy-dialog { width: min(540px, 100%); }
+.editable-copy-file { overflow-wrap: anywhere; font-weight: 700; color: #27483e !important; }
+.editable-copy-warning { display: flex; gap: 12px; align-items: flex-start; margin: 18px 0; padding: 15px; border: 1px solid #cfded2; border-radius: 8px; background: #f3f8f2; color: #294b3e; }
+.editable-copy-warning svg { flex: none; margin-top: 2px; }
+.editable-copy-warning p { margin: 0; line-height: 1.85; }

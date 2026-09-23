@@ -1,6 +1,6 @@
 export type AnnotationType = 'text' | 'stamp' | 'image' | 'check' | 'shape'
 export type FontFamilyId = 'legacy' | 'noto-sans-jp' | 'noto-serif-jp' | 'm-plus-1' | 'biz-udgothic'
-export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle'
+export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'line' | 'double-line'
 
 /** Geometry uses points from the top-left of the original displayed PDF page. */
 export interface Annotation {
@@ -11,6 +11,8 @@ export interface Annotation {
   y: number
   width: number
   height: number
+  /** Missing in older work files: shapes were free; other materials were proportional on drag. */
+  aspectLocked?: boolean
   text?: string
   fontSize?: number
   fontFamily?: FontFamilyId

@@ -16,32 +16,47 @@ export function normalizeRotation(rotation: number): number {
   return ((rotation % 360) + 360) % 360
 }
 
-export async function loadPdf(bytes: Uint8Array): Promise<{ document: PDFDocumentProxy; pages: PageInfo[]; signed: boolean }> {
-  if (bytes.byteLength > 100 * 1024 * 1024) throw new Error('MVPでは100MBまでのPDFを開けます。ファイルを分割してお試しください。')
+export class ProtectedPdfError extends Error {
+  constructor(public readonly kind: 'password' | 'restricted', message: string) {
+    super(message)
+    this.name = 'ProtectedPdfError'
+  }
+}
+
+export class EditableCopyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EditableCopyError'
+  }
+}
+
+async function startPdfjs(bytes: Uint8Array, password?: string) {
   const pdfjs = await import('pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
-  // PDF.js transfers its input buffer to the worker. Keep the caller's original intact.
-  // Kept for older PDF.js runtimes; PDF.js 6 removed the eval-based path.
   const assetUrl = (directory: string) => new URL(`./pdfjs/${directory}/`, window.document.baseURI).href
-  const parameters = {
-    data: bytes.slice(), isEvalSupported: false, useSystemFonts: true,
+  return pdfjs.getDocument({
+    data: bytes.slice(), password, useSystemFonts: true,
     cMapUrl: assetUrl('cmaps'), cMapPacked: true,
     standardFontDataUrl: assetUrl('standard_fonts'), wasmUrl: assetUrl('wasm'), iccUrl: assetUrl('iccs'),
-  }
-  const task = pdfjs.getDocument(parameters)
+  })
+}
+
+export async function loadPdf(bytes: Uint8Array): Promise<{ document: PDFDocumentProxy; pages: PageInfo[]; signed: boolean }> {
+  if (bytes.byteLength > 100 * 1024 * 1024) throw new Error('100MBまでのPDFを開けます。ファイルを分割してお試しください。')
+  // PDF.js transfers its input buffer to the worker. Keep the caller's original intact.
+  const task = await startPdfjs(bytes)
   let document: PDFDocumentProxy
   try {
     document = await task.promise
   } catch (error) {
     await task.destroy()
-    if (error instanceof Error && error.name === 'PasswordException') {
-      throw new Error('パスワード付きPDFにはまだ対応していません。ロックを解除したPDFを開いてください。')
-    }
+    if (error instanceof Error && error.name === 'PasswordException')
+      throw new ProtectedPdfError('password', 'このPDFを開くにはパスワードが必要です。')
     throw new Error('PDFを開けませんでした。ファイルが壊れていないか確認してください。')
   }
   const pages: PageInfo[] = []
   try {
-    if (document.numPages > 200) throw new Error('MVPでは200ページまでのPDFを開けます。ファイルを分割してお試しください。')
+    if (document.numPages > 200) throw new Error('200ページまでのPDFを開けます。ファイルを分割してお試しください。')
     for (let index = 0; index < document.numPages; index += 1) {
       const page = await document.getPage(index + 1)
       const viewport = page.getViewport({ scale: 1 })
@@ -51,11 +66,68 @@ export async function loadPdf(bytes: Uint8Array): Promise<{ document: PDFDocumen
         originalRotation: page.rotate, viewportTransform: [...viewport.transform],
       })
     }
-    const signatureSource = await PDFDocument.load(bytes, { updateMetadata: false })
+    let signatureSource: PDFDocument
+    try {
+      signatureSource = await PDFDocument.load(bytes, { updateMetadata: false })
+    } catch (error) {
+      if (error instanceof EncryptedPDFError || (error instanceof Error && error.message.includes('Input document to `PDFDocument.load` is encrypted')))
+        throw new ProtectedPdfError('restricted', 'このPDFには編集・保存の制限があります。')
+      throw error
+    }
     return { document, pages, signed: hasDigitalSignature(signatureSource) }
   } catch (error) {
     await document.loadingTask.destroy()
     throw error
+  }
+}
+
+/** Render visible pages into a new unsigned PDF; never mutate or save the protected original. */
+export async function createEditableCopy(
+  bytes: Uint8Array, password?: string, onProgress?: (completed: number, total: number) => void,
+): Promise<Uint8Array> {
+  if (bytes.byteLength > 50 * 1024 * 1024) throw new EditableCopyError('編集用コピーを作れる原本は50MBまでです。')
+  const task = await startPdfjs(bytes, password)
+  try {
+    let source: PDFDocumentProxy
+    try {
+      source = await task.promise
+    } catch (error) {
+      if (error instanceof Error && error.name === 'PasswordException')
+        throw new ProtectedPdfError('password', password ? 'パスワードが違います。確認して再入力してください。' : 'PDFを開くパスワードを入力してください。')
+      throw new EditableCopyError('保護されたPDFを開けませんでした。ファイルを確認してください。')
+    }
+    if (source.numPages < 1 || source.numPages > 200) throw new EditableCopyError('編集用コピーは200ページまで作成できます。')
+    if (source.isPureXfa) throw new EditableCopyError('XFA専用フォームは正しく画像化できません。元のアプリからPDFとして印刷して開いてください。')
+    const output = await PDFDocument.create()
+    let imageDataLength = 0
+    for (let index = 0; index < source.numPages; index += 1) {
+      const sourcePage = await source.getPage(index + 1)
+      const size = sourcePage.getViewport({ scale: 1 })
+      if (!(size.width > 0 && size.height > 0) || size.width * size.height > 16_000_000)
+        throw new EditableCopyError('ページの大きさが変換上限を超えています。')
+      const scale = Math.min(2.5, Math.sqrt(12_000_000 / (size.width * size.height)))
+      const viewport = sourcePage.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.ceil(viewport.width)
+      canvas.height = Math.ceil(viewport.height)
+      const context = canvas.getContext('2d')
+      if (!context) throw new EditableCopyError('PDFの描画領域を作成できませんでした。')
+      await sourcePage.render({ canvas, canvasContext: context, viewport }).promise
+      const imageData = canvas.toDataURL('image/jpeg', 0.9)
+      imageDataLength += imageData.length
+      if (imageDataLength > 68 * 1024 * 1024) throw new EditableCopyError('編集用コピーが50MBを超えるため、ページを分けてお試しください。')
+      const image = await output.embedJpg(imageData)
+      output.addPage([size.width, size.height]).drawImage(image, { x: 0, y: 0, width: size.width, height: size.height })
+      canvas.width = canvas.height = 0
+      sourcePage.cleanup()
+      onProgress?.(index + 1, source.numPages)
+    }
+    output.setTitle('LumaStudio PDF 編集用コピー')
+    const result = await output.save()
+    if (result.byteLength > 50 * 1024 * 1024) throw new EditableCopyError('編集用コピーが50MBを超えるため、ページを分けてお試しください。')
+    return result
+  } finally {
+    await task.destroy()
   }
 }
 
@@ -137,13 +209,23 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
   context.fillStyle = color
   context.strokeStyle = color
   if (annotation.type === 'shape') {
-    const strokeColor = annotation.strokeColor ?? '#000000'
-    const fillColor = annotation.fillColor ?? 'none'
-    const requestedStroke = annotation.strokeWidth ?? 1.5
+    const lineShape = annotation.shapeKind === 'line' || annotation.shapeKind === 'double-line'
+    const strokeColor = lineShape && annotation.strokeColor === 'none' ? '#000000' : annotation.strokeColor ?? '#000000'
+    const fillColor = lineShape ? 'none' : annotation.fillColor ?? 'none'
+    const requestedStroke = lineShape ? Math.max(0.5, annotation.strokeWidth ?? 1.5) : annotation.strokeWidth ?? 1.5
     const strokeWidth = strokeColor === 'none' ? 0 : Math.min(Math.max(0, requestedStroke), 20, width, height)
     const inset = strokeWidth / 2
     context.beginPath()
-    if (annotation.shapeKind === 'ellipse') {
+    if (lineShape) {
+      const offset = annotation.shapeKind === 'double-line'
+        ? Math.min(height / 4, Math.max(strokeWidth, height * 0.14)) : 0
+      context.moveTo(inset, height / 2 - offset)
+      context.lineTo(width - inset, height / 2 - offset)
+      if (annotation.shapeKind === 'double-line') {
+        context.moveTo(inset, height / 2 + offset)
+        context.lineTo(width - inset, height / 2 + offset)
+      }
+    } else if (annotation.shapeKind === 'ellipse') {
       context.ellipse(width / 2, height / 2, Math.max(0, width / 2 - inset), Math.max(0, height / 2 - inset), 0, 0, Math.PI * 2)
     } else if (annotation.shapeKind === 'triangle') {
       context.moveTo(width / 2, inset)

@@ -19,6 +19,7 @@ import {
 import {
   pointOnPage,
   resizeAnnotation,
+  isAspectLocked,
   type ResizeHandle,
 } from "../lib/annotation-geometry";
 import "./PdfPage.css";
@@ -629,7 +630,7 @@ export function PdfPage({
                 !readOnly &&
                 !editing &&
                 !panning &&
-                (annotation.type === "shape"
+                (annotation.type === "shape" || !isAspectLocked(annotation)
                   ? [...CORNERS, ...EDGES]
                   : CORNERS
                 ).map(({ corner, label }) => (

@@ -4,6 +4,10 @@ export type ResizeCorner = "nw" | "ne" | "sw" | "se";
 export type ResizeHandle = ResizeCorner | "n" | "e" | "s" | "w";
 export type Point = { x: number; y: number };
 
+export function isAspectLocked(annotation: Pick<Annotation, 'type' | 'aspectLocked'>): boolean {
+  return annotation.aspectLocked ?? annotation.type !== 'shape';
+}
+
 /** Convert the rotated page's bounding box back into original PDF points. */
 export function pointOnPage(
   client: Point,
@@ -31,8 +35,8 @@ export function resizeAnnotation(
   const north = corner.includes("n");
   const anchorX = west ? annotation.x + annotation.width : annotation.x;
   const anchorY = north ? annotation.y + annotation.height : annotation.y;
-  if (annotation.type === "shape") {
-    // Shapes deliberately stretch independently. Edge handles leave the other
+  if (!isAspectLocked(annotation)) {
+    // Unlocked materials stretch independently. Edge handles leave the other
     // axis untouched, and none of the handles may flip or leave the page.
     const horizontal = west || corner.includes("e");
     const vertical = north || corner.includes("s");

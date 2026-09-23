@@ -17,15 +17,15 @@ electron-builder は PR ではアドホック署名も省略するため、Mac �
 
 Mac の配布方式は [LumaStudioのMac版](https://github.com/altimix/LumaStudio/blob/main/README-Mac.txt) を参考にし、初回のアプリ個別許可は [Apple公式の手順](https://support.apple.com/ja-jp/guide/mac-help/mh40616/mac) に沿って `README-Mac.txt` で説明します。PDF版は `hardenedRuntime: true` と必要なElectronのentitlementsを維持します。`scripts/release-mac-check.mjs` は独自の短い検証スクリプトで、各配布ZIPを一時フォルダーへ展開し、同梱案内・リソース署名・bundle全体の整合性を確認します。検証専用コピーのリソースへ追記して検証が失敗することも確認し、元のZIP・利用者のアプリ・隔離属性は変更しません。初回のGatekeeper許可画面の実機確認とは区別します。
 
-## 試用版リリース
+## リリース
 
 1. `package.json` と `package-lock.json` のバージョンを合わせ、`docs/releases/v<version>.md` を作成して、通常の PR の手順でマージする。
 2. マージ後の `main` の CI 成功を確認し、そのコミットに `v<version>` タグを付けて push する。例: バージョン `0.1.0` は `v0.1.0`。
 3. `.github/workflows/release.yml` が、タグとバージョンの一致、両 OS の全テスト、配布物の起動を再確認する。
-4. Windows のインストーラー・ポータブル版、Mac の Intel・Apple Silicon それぞれの DMG・ZIP、SHA-256 チェックサムが揃った場合のみ GitHub の **Pre-release** を作成する。
-5. Release ページ、タグのコミット、6 種類の配布物、`README-Mac.txt` と `SHA256SUMS.txt` を確認し、Issue の完了条件と結果を更新して閉じる。チェックサムは案内ファイルも対象とする。既存リリースを無条件に上書きせず、修正版には新しいバージョンを使う。
+4. Windows のポータブルEXE、Mac の Intel・Apple Silicon それぞれのZIP、Mac起動案内、ライセンス、SHA-256チェックサムが揃った場合のみ GitHub Release を作成する。
+5. Release ページ、タグのコミット、3種類のアプリ配布物、`README-Mac.txt`、`LICENSE.txt` と `SHA256SUMS.txt` を確認し、Issue の完了条件と結果を更新して閉じる。チェックサムは案内ファイルも対象とする。既存リリースを無条件に上書きせず、修正版には新しいバージョンを使う。
 
-リリースのビルドジョブは読み取り権限のみです。GitHub のリリース作成ジョブだけが `contents: write` を持ちます。リポジトリの可視性は変更しません。現在は発行元のコード署名・Apple の公証を持たない試用版として配布します。Mac のアドホック署名はアプリの構造を検証するためのもので、発行元の認証ではありません。
+リリースのビルドジョブは読み取り権限のみです。GitHub のリリース作成ジョブだけが `contents: write` を持ちます。リポジトリの可視性は変更しません。発行元のコード署名・Appleの公証を持たない配布です。Macのアドホック署名はアプリの構造を検証するためのもので、発行元の認証ではありません。OSや組織の管理設定によって起動できない場合があります。
 
 ## 情報の取り扱い
 

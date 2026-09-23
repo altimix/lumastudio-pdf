@@ -691,6 +691,25 @@ input[type="color"] {
   gap: 12px;
   margin-bottom: 18px;
 }
+.aspect-lock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: -7px 0 14px;
+  padding: 6px 10px;
+  border: 1px solid #cdded5;
+  border-radius: 6px;
+  background: #fff;
+  color: #426052;
+  font-size: 11px;
+  font-weight: 700;
+}
+.aspect-lock-toggle[aria-pressed="true"] {
+  border-color: #86b49e;
+  background: #edf7f0;
+  color: #215c50;
+}
 .color-field {
   display: flex;
   flex-direction: row;

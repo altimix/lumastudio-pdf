@@ -18,8 +18,8 @@ export function expectedAssets(version, platform) {
   assert.match(version, versionPattern);
   assert.ok(['windows', 'macos', 'all'].includes(platform), 'Unknown release platform');
   const prefix = `LumaStudio-PDF-${version}`;
-  const windows = [`${prefix}-windows-x64-setup.exe`, `${prefix}-windows-x64-portable.exe`];
-  const macos = ['x64', 'arm64'].flatMap((arch) => ['dmg', 'zip'].map((ext) => `${prefix}-macos-${arch}.${ext}`));
+  const windows = [`${prefix}-windows-x64-portable.exe`];
+  const macos = ['x64', 'arm64'].map((arch) => `${prefix}-macos-${arch}.zip`);
   macos.push('README-Mac.txt', 'LICENSE.txt');
   return (platform === 'all' ? [...windows, ...macos] : platform === 'windows' ? windows : macos).sort();
 }

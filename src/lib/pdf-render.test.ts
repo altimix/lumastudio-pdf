@@ -73,6 +73,20 @@ describe('material rendering for preview and PDF export', () => {
     expect(context.stroke).toHaveBeenCalledOnce()
   })
 
+  it('draws a single and double cancellation line without filling their rectangles', async () => {
+    const single = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'line', fillColor: '#ff0000' })
+    expect(single.moveTo.mock.calls).toEqual([[0.75, 20]])
+    expect(single.lineTo.mock.calls).toEqual([[79.25, 20]])
+    expect(single.fill).not.toHaveBeenCalled()
+    const doubled = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'double-line' })
+    expect(doubled.moveTo).toHaveBeenCalledTimes(2)
+    expect(doubled.lineTo).toHaveBeenCalledTimes(2)
+    expect(doubled.moveTo.mock.calls[0][1]).toBeLessThan(doubled.moveTo.mock.calls[1][1])
+    expect(doubled.fill).not.toHaveBeenCalled()
+  })
+
   it('does not replace a zero outline width with its default', async () => {
     const { context } = drawingContext()
     await annotationToDataUrl({ ...base, strokeWidth: 0, fillColor: '#ffffff' })

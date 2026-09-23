@@ -90,9 +90,9 @@ describe('editable PDF project', () => {
     expect(restored.annotations[0]).not.toHaveProperty('underline')
   })
 
-  it.each<ShapeKind>(['rectangle', 'ellipse', 'triangle'])('round-trips editable %s geometry, transparent fill and stroke', shapeKind => {
+  it.each<ShapeKind>(['rectangle', 'ellipse', 'triangle', 'line', 'double-line'])('round-trips editable %s geometry, transparent fill and stroke', shapeKind => {
     const project = example()
-    project.annotations.push({ id: 'shape', pageId: 'page-one', type: 'shape', shapeKind, x: 40, y: 110, width: 130, height: 40, fillColor: 'none', strokeColor: '#f00', strokeWidth: 1.5 })
+    project.annotations.push({ id: 'shape', pageId: 'page-one', type: 'shape', shapeKind, x: 40, y: 110, width: 130, height: 40, aspectLocked: true, fillColor: 'none', strokeColor: '#f00', strokeWidth: 1.5 })
     expect(decodeProject(encodeProject(project))).toEqual(project)
     Object.assign(project.annotations.at(-1)!, { strokeColor: 'none', fillColor: '#00aabb', strokeWidth: 0 })
     expect(decodeProject(encodeProject(project))).toEqual(project)
@@ -153,6 +153,7 @@ describe('editable PDF project', () => {
     ['unsupported font weight', (raw: any) => { raw.annotations[0].fontWeight = 900 }, /太さ/],
     ['unsupported font style', (raw: any) => { raw.annotations[0].fontStyle = 'oblique 45deg' }, /スタイル/],
     ['nonboolean underline', (raw: any) => { raw.annotations[0].underline = 'false' }, /下線/],
+    ['nonboolean aspect lock', (raw: any) => { raw.annotations[0].aspectLocked = 'false' }, /縦横比ロック/],
     ['missing shape kind', (raw: any) => { raw.annotations[0].type = 'shape' }, /図形の種類/],
     ['unsupported shape kind', (raw: any) => { Object.assign(raw.annotations[0], { type: 'shape', shapeKind: 'svg' }) }, /図形の種類/],
     ['fill CSS injection', (raw: any) => { raw.annotations[0].fillColor = 'url(https://example.test/fill)' }, /塗りつぶしの色/],
