@@ -26,7 +26,7 @@ const bundledLicense = path.join(path.dirname(archive), 'LICENSE');
 assert.ok((await fs.readFile(bundledLicense)).equals(await fs.readFile(path.join(repo, 'LICENSE'))),
   '配布アプリ内のGPLライセンス本文が不足または変更されています。');
 // Reject stale builds before starting Electron or its print-inbox watcher.
-for (const source of ['electron/main.cjs', 'electron/preload.cjs', 'electron/inbox-path.cjs', 'server/settings.cjs', 'dist/index.html']) {
+for (const source of ['electron/main.cjs', 'electron/preload.cjs', 'electron/inbox-path.cjs', 'server/ai.cjs', 'server/ai-models.cjs', 'server/settings.cjs', 'dist/index.html']) {
   const current = await fs.readFile(path.join(repo, source));
   const bundled = extractFile(archive, path.normalize(source));
   assert.ok(current.equals(bundled), `配布アプリが古いため起動しません。再ビルド・再パッケージしてください: ${source}`);

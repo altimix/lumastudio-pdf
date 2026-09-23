@@ -8,7 +8,7 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
   const ref = useRef<HTMLElement>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [key, setKey] = useState("");
-  const [model, setModel] = useState("gpt-5.4-mini");
+  const [model, setModel] = useState("gpt-6-sol");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -46,16 +46,17 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
     setError("");
     setMessage("");
     try {
+      const keyWasEntered = key.trim().length > 0;
       const value = await desktop.saveAiSettings({ key, model });
       setKey("");
       setSettings({ ...value, canStore: settings.canStore });
       setModel(value.model);
-      setMessage(
-        "設定を保存しました。接続はAI自動記入を実行したときに確認します。",
-      );
+      setMessage(keyWasEntered
+        ? "設定を保存しました。接続はAI自動記入を実行したときに確認します。"
+        : "利用モデルを保存しました。接続はAI自動記入を実行したときに確認します。");
     } catch {
       setError(
-        "保存できませんでした。APIキーとモデル名、OSの保管機能を確認してください。",
+        "保存できませんでした。設定の状態とOSの保管機能を確認してください。",
       );
     } finally {
       setBusy(false);
@@ -73,7 +74,7 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
       setMessage(
         value.source === "environment"
           ? "保存した設定を削除し、既存の環境設定に戻しました。"
-          : "保存したAPIキーを削除しました。",
+          : "保存したAI設定を削除しました。",
       );
     } catch {
       setError("保存した設定を削除できませんでした。");
@@ -99,7 +100,7 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
           }
           if (event.key === "Tab") {
             const elements = ref.current?.querySelectorAll<HTMLElement>(
-              "button:not(:disabled),input:not(:disabled)",
+              "button:not(:disabled),input:not(:disabled),select:not(:disabled)",
             );
             if (!elements?.length) return;
             const first = elements[0],
@@ -165,20 +166,24 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
             </p>
             <label>
               利用モデル
-              <input
+              <select
+                aria-label="利用モデル"
                 value={model}
-                maxLength={100}
                 disabled={busy}
                 onChange={(event) => setModel(event.target.value)}
-              />
+              >
+                <option value="gpt-6-sol">GPT-6 Sol（標準）</option>
+                <option value="gpt-6-luna">GPT-6 Luna（軽量）</option>
+              </select>
             </label>
+            <p className="help-text">モデルだけの変更なら、APIキーを入力し直す必要はありません。</p>
             <p className="help-text">
               <LockKeyhole size={13} />
               キーはOSの保管機能で暗号化して、この端末に保存します。AIの実行前には、送信するページと登録情報を確認できます。
             </p>
             {settings && !settings.canStore && (
               <p className="inline-error">
-                この環境ではキーを安全に保存できません。OSの保管機能をご確認ください。
+                この環境ではAPIキーを安全に保存できません。モデルだけの選択は保存できます。
               </p>
             )}
             {settings?.warning && (
@@ -191,12 +196,14 @@ export function AiSettingsDialog({ onClose }: { onClose(): void }) {
                 onClick={remove}
               >
                 <Trash2 size={15} />
-                保存したキーを削除
+                保存したAI設定を削除
               </button>
               <button
                 className="primary"
                 onClick={save}
-                disabled={busy || !settings?.canStore || key.trim().length < 20}
+                disabled={busy || !settings || (key.trim().length > 0
+                  ? !settings.canStore || key.trim().length < 20
+                  : model === settings.model || Boolean(settings.warning && settings.hasStoredSettings))}
               >
                 この端末に保存
               </button>
