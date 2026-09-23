@@ -21,6 +21,9 @@ try {
   assert.equal(await desktop.locator('html').getAttribute('lang'), 'ja');
   assert.equal(await desktop.getByRole('heading', { level: 1 }).count(), 1);
   assert.match(await desktop.getByRole('heading', { level: 1 }).innerText(), /届いたPDFを、\s*返せる書類に/);
+  assert.match(await desktop.locator('.window-topline').innerText(), /v1\.0\.2/);
+  assert.match(await desktop.locator('#workspace-caption').innerText(), /v1\.0\.2/);
+  assert.doesNotMatch(await desktop.locator('#workspace-caption').innerText(), /最新版と一部異なります/);
   assert.equal(await desktop.locator('link[rel="canonical"]').getAttribute('href'), 'https://lumastudiopdf.altimix.jp/');
   const structured = JSON.parse(await desktop.locator('script[type="application/ld+json"]').textContent() || '{}');
   assert.equal(structured['@type'], 'SoftwareApplication');

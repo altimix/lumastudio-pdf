@@ -53,3 +53,11 @@ test('狭い画面でもページ操作が用紙の上で折り返して使え�
   const bounds = await deleteButton.boundingBox();
   expect(bounds && bounds.x + bounds.width <= 390).toBe(true);
 });
+
+test('中間幅でもページ操作バーがPDFの表示領域を広げすぎない', async ({ page }) => {
+  await page.setViewportSize({ width: 700, height: 850 });
+  await openPages(page);
+  const workspace = await page.locator('.workspace').boundingBox();
+  const controls = await page.getByRole('group', { name: 'このページの操作' }).boundingBox();
+  expect(workspace && controls && controls.x + controls.width <= workspace.x + workspace.width + 1).toBe(true);
+});

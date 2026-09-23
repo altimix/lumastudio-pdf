@@ -1209,12 +1209,12 @@ input[type="color"] {
   .page-caption > span:last-child {
     display: none;
   }
+}
+@media (max-width: 560px) {
   .page-action-bar {
     align-self: flex-start;
     width: calc(100vw - 40px);
   }
-}
-@media (max-width: 560px) {
   .app-shell {
     height: auto;
     min-height: 100dvh;
