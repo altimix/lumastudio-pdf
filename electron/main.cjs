@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell, session, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell, session, safeStorage } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -56,6 +56,32 @@ function focusMain() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+}
+
+function windowState() {
+  const window = mainWindow;
+  return {
+    maximized: !!window && !window.isDestroyed() && window.isMaximized(),
+    fullScreen: !!window && !window.isDestroyed() && window.isFullScreen(),
+  };
+}
+
+function notifyWindowState(window) {
+  if (window === mainWindow && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+    window.webContents.send('luma:window-state', windowState());
+  }
+}
+
+function restoreMainWindow() {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  if (window.isFullScreen()) {
+    // macOS finishes native full-screen transitions asynchronously.
+    window.once('leave-full-screen', () => {
+      if (window === mainWindow && !window.isDestroyed() && window.isMaximized()) window.unmaximize();
+    });
+    window.setFullScreen(false);
+  } else if (window.isMaximized()) window.unmaximize();
 }
 
 function flushPdfs() {
@@ -132,7 +158,7 @@ function setMenu() {
       process.platform === 'darwin' ? { role: 'close' } : { role: 'quit', label: '終了' },
     ],
   }, { role: 'editMenu', label: '編集' }, {
-    label: '表示', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }],
+    label: '表示', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, { label: '元のサイズに戻す', click: restoreMainWindow }],
   });
   if (!app.isPackaged) template.push({ label: '開発', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -141,8 +167,13 @@ function setMenu() {
 function createWindow() {
   rendererReady = false;
   receiving = false;
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const minWidth = Math.min(980, workArea.width);
+  const minHeight = Math.min(680, workArea.height);
   mainWindow = new BrowserWindow({
-    width: 1480, height: 970, minWidth: 980, minHeight: 680,
+    width: Math.min(1480, Math.max(minWidth, workArea.width - 80)),
+    height: Math.min(970, Math.max(minHeight, workArea.height - 80)),
+    minWidth, minHeight,
     title: 'LumaStudio PDF', backgroundColor: '#f5f7fa', show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -151,6 +182,10 @@ function createWindow() {
     },
   });
   lockWindow(mainWindow);
+  const window = mainWindow;
+  for (const event of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore']) {
+    window.on(event, () => notifyWindowState(window));
+  }
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.webContents.on('will-prevent-unload', (event) => {
     const choice = dialog.showMessageBoxSync(mainWindow, {
@@ -206,6 +241,8 @@ function printPdf(bytes) {
 }
 
 function registerIpc() {
+  ipcMain.handle('luma:window-state', (event) => { assertMainSender(event); return windowState(); });
+  ipcMain.handle('luma:restore-window', (event) => { assertMainSender(event); restoreMainWindow(); });
   ipcMain.handle('luma:open-help-link', async(event, id) => {
     assertMainSender(event);
     const url = require('./help-links.cjs').getHelpUrl(id);
@@ -230,7 +267,7 @@ function registerIpc() {
     if(!Array.isArray(data) || !data.length || data.length>100*1024*1024 || !data.every(n=>Number.isInteger(n)&&n>=0&&n<=255))throw new Error('作業データの形式またはサイズが正しくありません。');
     const bytes=Buffer.from(data);let content;
     try{content=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('作業データの形式が正しくありません。');}
-    if(content.app!=='LumaStudio PDF' || content.version!==1)throw new Error('対応していない作業データです。');
+    if(content.app!=='LumaStudio PDF' || (content.version!==1 && content.version!==2))throw new Error('対応していない作業データです。');
     const cleanName=path.basename(String(suggestedName || '作業データ.lumapdf')).replace(/[<>:"/\\|?*\x00-\x1f]/g,'_');
     const result=await dialog.showSaveDialog(mainWindow,{title:'編集を再開できる作業データを保存',defaultPath:path.join(app.getPath('documents'),cleanName.endsWith('.lumapdf')?cleanName:`${cleanName}.lumapdf`),filters:[{name:'LumaStudio PDF 作業データ',extensions:['lumapdf']}],properties:['showOverwriteConfirmation','createDirectory']});
     if(result.canceled || !result.filePath)return false;

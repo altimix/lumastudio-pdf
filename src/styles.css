@@ -171,6 +171,15 @@ h3 {
   color: #61757a;
   font-size: 12px;
 }
+.header-actions .window-restore-button {
+  color: var(--green);
+  border: 1px solid #b9d4cb;
+  background: #edf7f3;
+  font-weight: 700;
+}
+@media (max-width: 1260px) {
+  .header-actions .window-restore-button span { display: none; }
+}
 .document-bar {
   height: 57px;
   min-height: 57px;
@@ -219,12 +228,15 @@ h3 {
   padding: 6px 19px;
   border-bottom: 1px solid var(--line);
   gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .tool-group,
 .toolbar-right {
   display: flex;
   gap: 5px;
   align-items: center;
+  flex-shrink: 0;
 }
 .tool-group button {
   font-size: 12px;
@@ -313,6 +325,7 @@ h3 {
 .thumbnail-button {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 9px;
   width: 134px;
   padding: 8px;
@@ -325,22 +338,23 @@ h3 {
 }
 .thumbnail-paper {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: white;
   box-shadow: 0 1px 4px #2639411c;
   border: 2px solid transparent;
   overflow: hidden;
-  min-height: 135px;
+  max-width: 100%;
+  flex: none;
 }
 .thumbnail-button.active .thumbnail-paper {
   border-color: #438b7e;
 }
 .thumbnail-paper canvas {
-  width: 103px;
-  max-height: 150px;
-  object-fit: contain;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  max-width: none;
+  max-height: none;
 }
 .thumbnail-button > span {
   font-size: 11px;
@@ -1076,9 +1090,6 @@ input[type="color"] {
   }
   .thumbnail-button {
     width: 108px;
-  }
-  .thumbnail-paper canvas {
-    width: 87px;
   }
   .properties-content {
     padding: 18px 14px;

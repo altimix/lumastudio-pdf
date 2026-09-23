@@ -66,6 +66,35 @@ try {
   assert.equal(bridge.signAndSavePdf, 'function');
   assert.equal(bridge.aiAvailable, false);
   assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
+  console.log(JSON.stringify({ stage: 'desktop-bridge-ready', platform: process.platform }));
+  const initialWindowState = await page.evaluate(() => window.lumaDesktop.getWindowState());
+  assert.equal(typeof initialWindowState.maximized, 'boolean');
+  assert.equal(typeof initialWindowState.fullScreen, 'boolean');
+  const fullScreenable = await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) throw new Error('LumaStudio PDFのメイン画面が見つかりません。');
+    return window.isFullScreenable();
+  });
+  assert.equal(fullScreenable, true);
+  console.log(JSON.stringify({ stage: 'window-state-ready', platform: process.platform }));
+  // Headless macOS CI cannot reliably drive native window animations. Browser
+  // tests exercise the renderer's state and Esc/button behavior on both OSes;
+  // the packaged macOS smoke still checks the bridge, app launch, and PDF work.
+  if (process.platform === 'win32') {
+    const restoreButton = page.getByRole('button', { name: '元のサイズに戻す' });
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize());
+    await expect(restoreButton).toBeVisible({ timeout: 30_000 });
+    await restoreButton.focus();
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => window.lumaDesktop.getWindowState()), { timeout: 30_000 }).toMatchObject({ maximized: false, fullScreen: false });
+    await expect(restoreButton).toHaveCount(0, { timeout: 30_000 });
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
+    await expect.poll(() => page.evaluate(() => window.lumaDesktop.getWindowState()), { timeout: 30_000 }).toMatchObject({ fullScreen: true });
+    await expect(restoreButton).toBeVisible({ timeout: 30_000 });
+    await restoreButton.click();
+    await expect(restoreButton).toHaveCount(0, { timeout: 30_000 });
+    assert.deepEqual(await page.evaluate(() => window.lumaDesktop.getWindowState()), { maximized: false, fullScreen: false });
+  }
   await page.getByRole('button', { name: 'サンプルの書類で試す' }).click();
   await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.busy-indicator')).toHaveCount(0);
@@ -77,6 +106,7 @@ try {
     for (let index = 0; index < data.length; index += 4) if (data[index] < 190) ink += 1;
     return ink > 500;
   });
+  console.log(JSON.stringify({ stage: 'sample-pdf-rendered', platform: process.platform }));
   await page.getByRole('button', { name: '文字を記入', exact: true }).click();
   await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('noto-sans-jp');
   await expect(page.getByRole('spinbutton', { name: '文字サイズ', exact: true })).toHaveValue('11');
@@ -100,9 +130,40 @@ try {
   await page.getByRole('button', { name: '図形', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });
   await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
+  await page.getByRole('button', { name: 'ペン', exact: true }).click();
+  const inkLayer = page.getByTestId('ink-input-layer');
+  await expect(inkLayer).toBeVisible();
+  // A click confirms packaged Electron pointer input and ink rendering. The
+  // browser workflow suite covers full drags on both CI operating systems.
+  await inkLayer.click({ position: { x: 40, y: 60 } });
+  console.log(JSON.stringify({ stage: 'pen-input-complete', platform: process.platform, inkAnnotations: await page.getByRole('button', { name: /^ペン:/ }).count() }));
+  await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
+  console.log(JSON.stringify({ stage: 'pen-rendered', platform: process.platform }));
+  const projectPath = path.join(userData, 'ink-smoke.lumapdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, projectPath);
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '編集を再開できる作業データを保存しました' })).toBeVisible();
+  const savedProject = JSON.parse(await fs.readFile(projectPath, 'utf8'));
+  assert.equal(savedProject.version, 2);
+  assert.ok(savedProject.annotations.some(annotation => annotation.type === 'pen'));
+  const unsupportedVersion = Array.from(new TextEncoder().encode(JSON.stringify({ ...savedProject, version: 3 })));
+  await assert.rejects(
+    page.evaluate(data => window.lumaDesktop.saveProject(data, 'unsupported.lumapdf'), unsupportedVersion),
+    /対応していない作業データです。/,
+  );
+  console.log(JSON.stringify({ stage: 'project-v2-saved', platform: process.platform }));
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^ペン:/ })).toHaveCount(0);
+  // Undoing the saved edits leaves the document different from the saved copy.
+  await expect(page.locator('.unsaved')).toHaveCount(1);
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
   await expect(page.locator('.unsaved')).toHaveCount(0);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   const sealSize = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
@@ -114,7 +175,21 @@ try {
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   await expect(sealSize).toHaveValue('44');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, projectV2Saved: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
-  if (application) await application.close();
+  if (application) {
+    let closeTimer;
+    try {
+      await Promise.race([
+        application.close(),
+        new Promise((_, reject) => { closeTimer = setTimeout(() => reject(new Error('隔離した配布アプリを終了できませんでした。')), 5_000); }),
+      ]);
+    } catch {
+      // This exact test process uses a unique --user-data-dir. Never touch a
+      // user-launched LumaStudio PDF process or an arbitrary matching name.
+      application.process().kill();
+    } finally {
+      clearTimeout(closeTimer);
+    }
+  }
 }

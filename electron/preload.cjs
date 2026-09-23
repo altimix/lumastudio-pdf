@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('lumaDesktop', {
+  getWindowState: () => ipcRenderer.invoke('luma:window-state'),
+  restoreWindow: () => ipcRenderer.invoke('luma:restore-window'),
+  onWindowStateChange: (callback) => {
+    if (typeof callback !== 'function') throw new TypeError('A callback is required.');
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('luma:window-state', listener);
+    return () => ipcRenderer.removeListener('luma:window-state', listener);
+  },
   openPdf: () => ipcRenderer.invoke('luma:open-pdf'),
   openPdfs: () => ipcRenderer.invoke('luma:open-pdfs'),
   openProject: () => ipcRenderer.invoke('luma:open-project'),

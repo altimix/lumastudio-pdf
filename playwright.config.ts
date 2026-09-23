@@ -12,7 +12,7 @@ export default defineConfig({
   // Each project owns a separate browser worker. Keep long PDF and font
   // workflows in fresh browser processes on shared Windows CI runners.
   projects: [
-    { name: 'pdf-workflows', testMatch: /(?:ai-settings|certificate-guide|direct-edit|editable-copy|editor|merge)\.spec\.ts$/ },
+    { name: 'pdf-workflows', testMatch: /(?:ai-settings|certificate-guide|direct-edit|editable-copy|editor|ink-tools|merge|thumbnail-layout|window-restore)\.spec\.ts$/ },
     { name: 'font-rendering', testMatch: /font-rendering\.spec\.ts$/, use: { baseURL: sourceURL } },
     { name: 'numeric-fields', testMatch: /numeric-field\.spec\.ts$/ },
     { name: 'editable-projects', testMatch: /project\.spec\.ts$/ },

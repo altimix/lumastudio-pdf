@@ -148,7 +148,7 @@ function validateProject(value: unknown): PdfProject {
     const page = pagesById.get(pageId)
     if (!page) fail('記入先のページがありません。')
     const type = annotation.type
-    if (type !== 'text' && type !== 'stamp' && type !== 'image' && type !== 'check' && type !== 'shape') fail('記入の種類が不正です。')
+    if (type !== 'text' && type !== 'stamp' && type !== 'image' && type !== 'check' && type !== 'shape' && type !== 'pen' && type !== 'marker') fail('記入の種類が不正です。')
     const x = finite(annotation.x, '記入の横位置', 0, page.width)
     const y = finite(annotation.y, '記入の縦位置', 0, page.height)
     const width = finite(annotation.width, '記入の幅', Number.MIN_VALUE, page.width)
@@ -196,7 +196,16 @@ function validateProject(value: unknown): PdfProject {
     }
     if (annotation.fillColor !== undefined) result.fillColor = color(annotation.fillColor, '塗りつぶしの色', true)
     if (annotation.strokeColor !== undefined) result.strokeColor = color(annotation.strokeColor, '枠線の色', true)
-    if (annotation.strokeWidth !== undefined) result.strokeWidth = finite(annotation.strokeWidth, '枠線の太さ', 0, 20)
+    if (annotation.strokeWidth !== undefined) result.strokeWidth = finite(annotation.strokeWidth, type === 'pen' || type === 'marker' ? '手書き線の太さ' : '枠線の太さ', type === 'pen' || type === 'marker' ? 1 : 0, type === 'pen' || type === 'marker' ? 72 : 20)
+    if (type === 'pen' || type === 'marker') {
+      if (!Array.isArray(annotation.points) || annotation.points.length < 1 || annotation.points.length > 2048) fail('手書き線の点数が不正です。')
+      if (result.strokeWidth === undefined || result.color === undefined) fail('手書き線の色と太さが必要です。')
+      result.points = annotation.points.map((entry: unknown) => {
+        const point = object(entry, '手書き線の点')
+        return { x: finite(point.x, '手書き線の横位置', 0, 1), y: finite(point.y, '手書き線の縦位置', 0, 1) }
+      })
+      contentSize += result.points.length * 48
+    } else if (annotation.points !== undefined) fail('手書き線以外に点の情報は指定できません。')
     if (type === 'image' || annotation.dataUrl !== undefined) {
       result.dataUrl = validateImage(annotation.dataUrl)
       contentSize += result.dataUrl.length
