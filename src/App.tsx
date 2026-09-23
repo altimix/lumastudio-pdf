@@ -923,7 +923,9 @@ export default function App() {
       setProjectError(message);
       setError(message);
     } finally {
-      if (candidate && !adopted) await candidate.document.loadingTask.destroy();
+      // Releasing an invalid candidate can wait on a stalled PDF worker.
+      // Keep the original document usable and show the validation error now.
+      if (candidate && !adopted) void candidate.document.loadingTask.destroy().catch(() => {});
       setBusy("");
     }
   };
