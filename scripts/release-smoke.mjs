@@ -66,6 +66,7 @@ try {
   assert.equal(bridge.signAndSavePdf, 'function');
   assert.equal(bridge.aiAvailable, false);
   assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
+  console.log(JSON.stringify({ stage: 'desktop-bridge-ready', platform: process.platform }));
   const initialWindowState = await page.evaluate(() => window.lumaDesktop.getWindowState());
   assert.equal(typeof initialWindowState.maximized, 'boolean');
   assert.equal(typeof initialWindowState.fullScreen, 'boolean');
@@ -75,6 +76,7 @@ try {
     return window.isFullScreenable();
   });
   assert.equal(fullScreenable, true);
+  console.log(JSON.stringify({ stage: 'window-state-ready', platform: process.platform }));
   // Headless macOS CI cannot reliably drive native window animations. Browser
   // tests exercise the renderer's state and Esc/button behavior on both OSes;
   // the packaged macOS smoke still checks the bridge, app launch, and PDF work.
@@ -104,6 +106,7 @@ try {
     for (let index = 0; index < data.length; index += 4) if (data[index] < 190) ink += 1;
     return ink > 500;
   });
+  console.log(JSON.stringify({ stage: 'sample-pdf-rendered', platform: process.platform }));
   await page.getByRole('button', { name: '文字を記入', exact: true }).click();
   await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('noto-sans-jp');
   await expect(page.getByRole('spinbutton', { name: '文字サイズ', exact: true })).toHaveValue('11');
@@ -135,6 +138,7 @@ try {
   await page.mouse.move(surface.x + 200, surface.y + 280, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
+  console.log(JSON.stringify({ stage: 'pen-rendered', platform: process.platform }));
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
@@ -152,5 +156,19 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
-  if (application) await application.close();
+  if (application) {
+    let closeTimer;
+    try {
+      await Promise.race([
+        application.close(),
+        new Promise((_, reject) => { closeTimer = setTimeout(() => reject(new Error('隔離した配布アプリを終了できませんでした。')), 5_000); }),
+      ]);
+    } catch {
+      // This exact test process uses a unique --user-data-dir. Never touch a
+      // user-launched LumaStudio PDF process or an arbitrary matching name.
+      application.process().kill();
+    } finally {
+      clearTimeout(closeTimer);
+    }
+  }
 }
