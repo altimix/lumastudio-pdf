@@ -179,13 +179,13 @@ test('長方形・楕円・三角形の枠線と塗りつぶしを指定し、PD
   await page.getByTestId('pdf-input').setInputFiles(path);
   await expect(page.locator('.annotation')).toHaveCount(0, { timeout: 30_000 });
   const samples = [
-    { x: 140, y: 160, expected: 'red' },
-    { x: 140, y: 122, expected: 'blue' },
-    { x: 130, y: 330, expected: 'white' },
-    { x: 178, y: 330, expected: 'green' },
-    { x: 81, y: 281, expected: 'white' },
-    { x: 330, y: 335, expected: 'blue' },
-    { x: 283, y: 283, expected: 'white' },
+    { x: 80, y: 120, expected: 'red' },
+    { x: 21, y: 120, expected: 'blue' },
+    { x: 145, y: 120, expected: 'white' },
+    { x: 80, y: 232, expected: 'green' },
+    { x: 80, y: 280, expected: 'white' },
+    { x: 280, y: 290, expected: 'blue' },
+    { x: 230, y: 235, expected: 'white' },
   ];
   await expect.poll(() => page.locator('.pdf-canvas').evaluate((element, points) => {
     const canvas = element as HTMLCanvasElement;
@@ -201,4 +201,46 @@ test('長方形・楕円・三角形の枠線と塗りつぶしを指定し、PD
   }, samples)).toEqual(samples.map(point => point.expected));
   await page.screenshot({ path: testInfo.outputPath('exported-shapes.png'), fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('図形は丸を初期選択し、線と二重線をクリック中心に置いてPDFへ保存できる', async ({ page }, testInfo) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await expect(page.getByLabel('図形の種類', { exact: true })).toHaveValue('ellipse');
+  const surface = page.getByTestId('pdf-surface');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await surface.click({ position: { x: 250 * scale, y: 180 * scale } });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(4);
+  await expect(page.getByTestId('resize-e')).toHaveCount(0);
+  await lock.click();
+  await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
+  await placeShape(page, '線', 250, 300);
+  await expect(page.getByLabel('塗りつぶし', { exact: true })).toHaveCount(0);
+  await placeShape(page, '二重線（取消線）', 250, 370);
+  const saved = await saveProject(page, testInfo, 'centered-shapes.lumapdf');
+  expect(saved.data.annotations).toMatchObject([
+    { shapeKind: 'ellipse', x: 200, y: 130, width: 100, height: 100, aspectLocked: false },
+    { shapeKind: 'line', x: 170, y: 294, width: 160, height: 12, aspectLocked: false, fillColor: 'none' },
+    { shapeKind: 'double-line', x: 170, y: 361, width: 160, height: 18, aspectLocked: false, fillColor: 'none' },
+  ]);
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const path = testInfo.outputPath('centered-shapes.pdf');
+  await (await event).saveAs(path);
+  expect((await PDFDocument.load(await readFile(path))).getPageCount()).toBe(1);
+  await page.getByTestId('pdf-input').setInputFiles(path);
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext('2d')!;
+    return [[250, 300], [250, 367], [250, 370], [250, 372]].map(([x, y]) => {
+      const color = context.getImageData(Math.round(x * canvas.width / 500), Math.round(y * canvas.height / 700), 1, 1).data;
+      return color[0] < 100 && color[1] < 100 && color[2] < 100 ? 'black' : 'white';
+    });
+  })).toEqual(['black', 'black', 'white', 'black']);
 });

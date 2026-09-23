@@ -13,7 +13,7 @@ try {
     wasmUrl: new URL('../node_modules/pdfjs-dist/wasm/', import.meta.url).href,
   });
   const pdf = await task.promise;
-  if (pdf.numPages > 100) throw new Error('MVPの印刷は100ページまでです。PDF保存後に通常のPDFビューアーで印刷してください。');
+  if (pdf.numPages > 100) throw new Error('印刷は100ページまでです。PDF保存後に通常のPDFビューアーで印刷してください。');
   const sheets = document.getElementById('pages');
   const pageRules = document.createElement('style');
   document.head.append(pageRules);

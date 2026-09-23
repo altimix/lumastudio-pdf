@@ -171,7 +171,10 @@ test('回転したページへの記入位置とPDF保存後の回転が一致�
   const annotation = page.getByRole('button', { name: '文字: 回転後の記入', exact: true });
   await expect(annotation).toBeVisible();
   await expect.poll(() => annotation.evaluate((element) => parseFloat((element as HTMLElement).style.left))).toBeCloseTo(68, 0);
-  await expect.poll(() => annotation.evaluate((element) => parseFloat((element as HTMLElement).style.top))).toBeCloseTo(85, 0);
+  await expect.poll(() => annotation.evaluate((element) => {
+    const style = (element as HTMLElement).style;
+    return parseFloat(style.top) + parseFloat(style.height) / 2;
+  })).toBeCloseTo(85, 0);
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
   const outputPath = testInfo.outputPath('rotated.pdf');

@@ -92,6 +92,7 @@ export function ShapeStyleFields({
 }) {
   const stroke = value.strokeColor ?? "#000000";
   const fill = value.fillColor ?? "none";
+  const lineShape = value.shapeKind === "line" || value.shapeKind === "double-line";
   const visibleStroke = stroke !== "none" && (value.strokeWidth ?? 1.5) > 0;
   return (
     <fieldset
@@ -102,20 +103,27 @@ export function ShapeStyleFields({
         図形の種類
         <select
           aria-label="図形の種類"
-          value={value.shapeKind ?? "rectangle"}
-          onChange={(e) => onChange({ shapeKind: e.target.value as ShapeKind })}
+          value={value.shapeKind ?? "ellipse"}
+          onChange={(e) => {
+            const shapeKind = e.target.value as ShapeKind;
+            onChange(shapeKind === "line" || shapeKind === "double-line"
+              ? { shapeKind, strokeColor: stroke === "none" ? "#000000" : stroke, fillColor: "none", strokeWidth: Math.max(0.5, value.strokeWidth ?? 1.5) }
+              : { shapeKind });
+          }}
         >
-          <option value="rectangle">長方形</option>
           <option value="ellipse">楕円・円</option>
+          <option value="rectangle">長方形</option>
           <option value="triangle">三角形</option>
+          <option value="line">線</option>
+          <option value="double-line">二重線（取消線）</option>
         </select>
       </label>
       <div className="shape-paint-row">
         <label className="checkbox-label">
           <input
             type="checkbox"
-            checked={stroke !== "none"}
-            disabled={disabled || (stroke !== "none" && fill === "none")}
+            checked={lineShape || stroke !== "none"}
+            disabled={disabled || lineShape || (stroke !== "none" && fill === "none")}
             onChange={(e) =>
               onChange({ strokeColor: e.target.checked ? "#000000" : "none" })
             }
@@ -126,7 +134,7 @@ export function ShapeStyleFields({
           type="color"
           aria-label="枠線の色"
           value={stroke === "none" ? "#000000" : stroke}
-          disabled={disabled || stroke === "none"}
+          disabled={disabled || (!lineShape && stroke === "none")}
           onChange={(e) => onChange({ strokeColor: e.target.value })}
         />
       </div>
@@ -135,18 +143,18 @@ export function ShapeStyleFields({
         <NumericField
           aria-label="枠線の太さ"
           value={value.strokeWidth ?? 1.5}
-          min={fill === "none" ? 0.5 : 0}
+          min={lineShape || fill === "none" ? 0.5 : 0}
           max={20}
           step={0.5}
           suffix="pt"
-          disabled={disabled || stroke === "none"}
+          disabled={disabled || (!lineShape && stroke === "none")}
           onChange={(strokeWidth) => onChange({ strokeWidth })}
           onPreview={onWidthPreview}
           onScrubStart={onScrubStart}
           onEditingChange={onEditingChange}
         />
       </label>
-      <div className="shape-paint-row">
+      {!lineShape && <div className="shape-paint-row">
         <label className="checkbox-label">
           <input
             type="checkbox"
@@ -165,9 +173,11 @@ export function ShapeStyleFields({
           disabled={disabled || fill === "none"}
           onChange={(e) => onChange({ fillColor: e.target.value })}
         />
-      </div>
+      </div>}
       <p className="help-text">
-        図形が見えなくならないよう、枠線か塗りつぶしのどちらかを表示します。
+        {lineShape
+          ? "線は枠線の色と太さで描画します。塗りつぶしは使いません。"
+          : "図形が見えなくならないよう、枠線か塗りつぶしのどちらかを表示します。"}
       </p>
     </fieldset>
   );

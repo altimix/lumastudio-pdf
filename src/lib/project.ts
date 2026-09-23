@@ -155,6 +155,10 @@ function validateProject(value: unknown): PdfProject {
     const height = finite(annotation.height, '記入の高さ', Number.MIN_VALUE, page.height)
     if (x + width > page.width + 0.000001 || y + height > page.height + 0.000001) fail('記入がページの範囲を超えています。')
     const result: Annotation = { id, pageId, type, x, y, width, height }
+    if (annotation.aspectLocked !== undefined) {
+      if (typeof annotation.aspectLocked !== 'boolean') fail('縦横比ロックの指定が不正です。')
+      result.aspectLocked = annotation.aspectLocked
+    }
     if (annotation.text !== undefined) result.text = string(annotation.text, '記入する文字', 3000, true)
     if (annotation.fontSize !== undefined) result.fontSize = finite(annotation.fontSize, '文字サイズ', 6, 96)
     // Missing font metadata keeps the OS font used by older work files. Never
@@ -187,7 +191,7 @@ function validateProject(value: unknown): PdfProject {
       result.stampSource = true
     }
     if (type === 'shape' || annotation.shapeKind !== undefined) {
-      if (annotation.shapeKind !== 'rectangle' && annotation.shapeKind !== 'ellipse' && annotation.shapeKind !== 'triangle') fail('図形の種類が不正です。')
+      if (annotation.shapeKind !== 'rectangle' && annotation.shapeKind !== 'ellipse' && annotation.shapeKind !== 'triangle' && annotation.shapeKind !== 'line' && annotation.shapeKind !== 'double-line') fail('図形の種類が不正です。')
       result.shapeKind = annotation.shapeKind
     }
     if (annotation.fillColor !== undefined) result.fillColor = color(annotation.fillColor, '塗りつぶしの色', true)

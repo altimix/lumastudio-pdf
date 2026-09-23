@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { version as appVersion } from "../package.json";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   ArrowDown,
@@ -7,6 +8,7 @@ import {
   CheckCheck,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   FilePlus2,
   FileText,
@@ -16,6 +18,8 @@ import {
   Info,
   KeyRound,
   LoaderCircle,
+  Lock,
+  LockOpen,
   MousePointer2,
   MoreHorizontal,
   PanelLeftClose,
@@ -40,9 +44,12 @@ import {
 import {
   annotationToDataUrl,
   appendPdfSources,
+  createEditableCopy,
   createSamplePdf,
+  EditableCopyError,
   exportPdf,
   loadPdf,
+  ProtectedPdfError,
   renderPdfPage,
 } from "./lib/pdf";
 import type {
@@ -72,6 +79,7 @@ import {
   type PdfPageHandle,
 } from "./components/PdfPage";
 import { usePdfViewport } from "./hooks/usePdfViewport";
+import { isAspectLocked } from "./lib/annotation-geometry";
 import { ProfileDialog, type Profile } from "./components/ProfileDialog";
 import { StampImportDialog } from "./components/StampImportDialog";
 import { prepareAiPage } from "./lib/ai-page";
@@ -80,6 +88,7 @@ import { MergeDialog, type MergeFile } from "./components/MergeDialog";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { CertificateGuide } from "./components/CertificateGuide";
+import { EditableCopyDialog, type EditableCopyReason } from "./components/EditableCopyDialog";
 import { encodeProject, decodeProject } from "./lib/project";
 import {
   PageContextMenu,
@@ -144,7 +153,7 @@ export default function App() {
   const [fontWeight, setFontWeight] = useState<400 | 700>(400);
   const [fontStyle, setFontStyle] = useState<"normal" | "italic">("normal");
   const [underline, setUnderline] = useState(false);
-  const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("ellipse");
   const [strokeColor, setStrokeColor] = useState("#000000");
   const [fillColor, setFillColor] = useState("none");
   const [strokeWidth, setStrokeWidth] = useState(1.5);
@@ -154,6 +163,7 @@ export default function App() {
   const flushingControls = useRef(false);
   const [color, setColor] = useState("#000000");
   const [textDraft, setTextDraft] = useState<Annotation | null>(null);
+  const textPlacementCenter = useRef<{ id: string; y: number } | null>(null);
   const [textEditing, setTextEditing] = useState(false);
   const pageEditorRef = useRef<PdfPageHandle>(null);
   const editsRef = useRef(edits);
@@ -169,6 +179,12 @@ export default function App() {
   const [stampFile, setStampFile] = useState<File | null>(null);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [signedInput, setSignedInput] = useState(false);
+  const [editableCopySource, setEditableCopySource] = useState<{
+    bytes: Uint8Array;
+    name: string;
+    reason: EditableCopyReason;
+  } | null>(null);
+  const [editableCopyError, setEditableCopyError] = useState("");
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeFiles, setMergeFiles] = useState<MergeFile[]>([]);
   const [mergeError, setMergeError] = useState("");
@@ -261,6 +277,7 @@ export default function App() {
     projectOpen,
     aiSettingsOpen,
     certificateGuideOpen,
+    editableCopyOpen: Boolean(editableCopySource),
   });
   currentRef.current = {
     dirty,
@@ -271,6 +288,7 @@ export default function App() {
     projectOpen,
     aiSettingsOpen,
     certificateGuideOpen,
+    editableCopyOpen: Boolean(editableCopySource),
   };
   const notify = (value: string) => {
     setMessage(value);
@@ -294,6 +312,15 @@ export default function App() {
   };
   const applyText = (annotation: Annotation) => {
     const current = editsRef.current;
+    const placement = textPlacementCenter.current;
+    if (placement?.id === annotation.id) {
+      textPlacementCenter.current = null;
+      const sheet = current.pages.find((page) => page.id === annotation.pageId);
+      if (sheet) {
+        const height = Math.min(sheet.height, Math.max(annotation.height, measureTextHeight(annotation)));
+        annotation = { ...annotation, height, y: Math.max(0, Math.min(sheet.height - height, placement.y - height / 2)) };
+      }
+    }
     if (
       !current.pages.some((p) => p.id === annotation.pageId) ||
       signedInput ||
@@ -415,21 +442,29 @@ export default function App() {
     sheet: PageInfo,
   ) => {
     const updated = { ...source, ...change };
-    if (
-      (source.type === "image" || source.type === "stamp") &&
-      ("width" in change || "height" in change)
-    ) {
+    if (isAspectLocked(source) && ("width" in change || "height" in change)) {
+      const paddingWidth = source.type === "text" && source.width > 4 ? 4 : 0;
+      const paddingHeight = source.type === "text" && source.height > 6 ? 6 : 0;
+      const contentWidth = source.width - paddingWidth;
+      const contentHeight = source.height - paddingHeight;
       const ratio =
         "width" in change
-          ? updated.width / source.width
-          : updated.height / source.height;
-      const bounded = Math.min(
-        ratio,
-        sheet.width / source.width,
-        sheet.height / source.height,
+          ? (updated.width - paddingWidth) / contentWidth
+          : (updated.height - paddingHeight) / contentHeight;
+      const maximum = Math.min(
+        (sheet.width - paddingWidth) / contentWidth,
+        (sheet.height - paddingHeight) / contentHeight,
+        source.type === "text" ? 96 / (source.fontSize || 16) : Infinity,
       );
-      updated.width = source.width * bounded;
-      updated.height = source.height * bounded;
+      const minimum = Math.max(
+        (8 - paddingWidth) / contentWidth,
+        (8 - paddingHeight) / contentHeight,
+        source.type === "text" ? 6 / (source.fontSize || 16) : 0,
+      );
+      const bounded = Math.min(maximum, Math.max(Math.min(minimum, maximum), ratio));
+      updated.width = paddingWidth + contentWidth * bounded;
+      updated.height = paddingHeight + contentHeight * bounded;
+      if (source.type === "text") updated.fontSize = Math.max(6, (source.fontSize || 16) * bounded);
     }
     updated.width = Math.min(sheet.width, Math.max(8, updated.width));
     if (updated.type === "text")
@@ -569,28 +604,32 @@ export default function App() {
     );
   };
 
-  const openBytes = useCallback(async (bytes: Uint8Array, name: string) => {
+  const openBytes = useCallback(async (bytes: Uint8Array, name: string, fromCopy = false): Promise<boolean> => {
     while (
-      currentRef.current.busy ||
-      currentRef.current.signatureOpen ||
-      currentRef.current.mergeOpen ||
-      currentRef.current.projectOpen ||
-      currentRef.current.aiSettingsOpen ||
-      currentRef.current.certificateGuideOpen
+      !fromCopy && (
+        currentRef.current.busy ||
+        currentRef.current.signatureOpen ||
+        currentRef.current.mergeOpen ||
+        currentRef.current.projectOpen ||
+        currentRef.current.aiSettingsOpen ||
+        currentRef.current.certificateGuideOpen ||
+        currentRef.current.editableCopyOpen
+      )
     )
       await new Promise((resolve) => setTimeout(resolve, 100));
     if (
+      !fromCopy &&
       currentRef.current.dirty &&
       !confirm(
         "保存していない変更があります。変更を破棄して別のPDFを開きますか？",
       )
     )
-      return;
+      return false;
     if (bytes.length > 50 * 1024 * 1024) {
       setError(
-        "MVPでは50MBまでのPDFを開けます。ファイルを分割してお試しください。",
+        "50MBまでのPDFを開けます。ファイルを分割してお試しください。",
       );
-      return;
+      return false;
     }
     flushBeforeOperation.current();
     setBusy("PDFを開いています");
@@ -626,17 +665,47 @@ export default function App() {
           : "道具を選んで、用紙の記入したい場所をクリックしてください。",
       );
       if (previous) void previous.loadingTask.destroy();
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "PDFを開けませんでした。");
+      if (e instanceof ProtectedPdfError) {
+        setEditableCopySource({ bytes: bytes.slice(), name, reason: e.kind });
+        setEditableCopyError("");
+      } else setError(e instanceof Error ? e.message : "PDFを開けませんでした。");
+      return false;
     } finally {
       setBusy("");
     }
   }, []);
+  const convertEditableCopy = async (password: string) => {
+    const source = editableCopySource;
+    if (!source || busy) return;
+    setEditableCopyError("");
+    setBusy("編集用コピーを作成しています");
+    currentRef.current.busy = "編集用コピーを作成しています";
+    try {
+      const converted = await createEditableCopy(source.bytes, password, (completed, total) =>
+        setBusy(`編集用コピーを作成しています（${completed}/${total}ページ）`));
+      const copyName = source.name.replace(/\.pdf$/i, "") + "_編集用コピー.pdf";
+      setEditableCopySource(null);
+      currentRef.current.editableCopyOpen = false;
+      setBusy("");
+      currentRef.current.busy = "";
+      if (await openBytes(converted, copyName, true))
+        notify("元のPDFを残して編集用コピーを開きました。編集後は別名で保存してください。");
+    } catch (error) {
+      setEditableCopyError(error instanceof ProtectedPdfError || error instanceof EditableCopyError
+        ? error.message
+        : "編集用コピーを作成できませんでした。PDFを確認してください。");
+    } finally {
+      setBusy("");
+      currentRef.current.busy = "";
+    }
+  };
   useEffect(
     () =>
-      window.lumaDesktop?.onOpenPdf((file) =>
-        openBytes(new Uint8Array(file.data), file.name),
-      ),
+      window.lumaDesktop?.onOpenPdf(async (file) => {
+        await openBytes(new Uint8Array(file.data), file.name);
+      }),
     [openBytes],
   );
   useEffect(() => {
@@ -1089,6 +1158,15 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+      if (editableCopySource) {
+        const typingInDialog = e.target instanceof HTMLElement &&
+          !!e.target.closest("input, textarea, select, [contenteditable]");
+        const command = (e.metaKey || e.ctrlKey) && e.key.toLowerCase();
+        if (command === "s" || command === "p" ||
+          (!typingInDialog && (command === "z" || e.key === "Delete" || e.key === "Backspace")))
+          e.preventDefault();
+        return;
+      }
       if (
         profileOpen ||
         printHelp ||
@@ -1207,9 +1285,11 @@ export default function App() {
           : tool === "image"
             ? imageData!.width
             : tool === "check"
-              ? 12
+              ? 15
               : tool === "shape"
-                ? shapeKind === "rectangle"
+                ? shapeKind === "line" || shapeKind === "double-line"
+                  ? 160
+                  : shapeKind === "rectangle"
                   ? 120
                   : 100
                 : stampSize;
@@ -1219,12 +1299,16 @@ export default function App() {
         : tool === "image"
           ? imageData!.height
           : tool === "check"
-            ? 12
+            ? 15
             : tool === "shape"
               ? shapeKind === "ellipse"
                 ? 100
                 : shapeKind === "triangle"
                   ? 90
+                  : shapeKind === "line"
+                    ? 12
+                    : shapeKind === "double-line"
+                      ? 18
                   : 80
               : stampSize;
     if (tool === "stamp" && stamp.dataUrl && stamp.aspectRatio) {
@@ -1239,21 +1323,26 @@ export default function App() {
       width = Math.min(page.width, width);
       height = Math.min(page.height, height);
     }
+    const centerX = tool === "check" || tool === "shape";
+    const centerY = centerX || tool === "text";
+    const lineShape = tool === "shape" && (shapeKind === "line" || shapeKind === "double-line");
     const annotation: Annotation = {
       id: crypto.randomUUID(),
       pageId: page.id,
       type: tool === "stamp" && stamp.dataUrl ? "image" : tool,
-      x: Math.max(0, Math.min(page.width - width, x)),
-      y: Math.max(0, Math.min(page.height - height, y)),
+      x: Math.max(0, Math.min(page.width - width, x - (centerX ? width / 2 : 0))),
+      y: Math.max(0, Math.min(page.height - height, y - (centerY ? height / 2 : 0))),
       width,
       height,
+      aspectLocked: tool !== "shape",
       text: tool === "stamp" ? stamp.name : tool === "text" ? text : undefined,
       fontSize,
       ...(tool === "text"
         ? { fontFamily, fontWeight, fontStyle, underline }
         : {}),
       ...(tool === "shape"
-        ? { shapeKind, strokeColor, fillColor, strokeWidth }
+        ? { shapeKind, strokeColor: lineShape && strokeColor === "none" ? "#000000" : strokeColor,
+          fillColor: lineShape ? "none" : fillColor, strokeWidth: lineShape ? Math.max(0.5, strokeWidth) : strokeWidth }
         : {}),
       color: tool === "stamp" ? "#bb373c" : color,
       stampShape: stamp.shape,
@@ -1273,10 +1362,13 @@ export default function App() {
         );
         annotation.y = Math.max(
           0,
-          Math.min(page.height - annotation.height, y),
+          Math.min(page.height - annotation.height, y - annotation.height / 2),
         );
       }
-      if (tool === "text" && !text.trim()) setTextDraft(annotation);
+      if (tool === "text" && !text.trim()) {
+        textPlacementCenter.current = { id: annotation.id, y };
+        setTextDraft(annotation);
+      }
       else
         recordEdit({
           ...editsRef.current,
@@ -1573,7 +1665,7 @@ export default function App() {
                 書類の仕上げを、もっと手軽に。
               </span>
             </div>
-            <span className="version">MVP</span>
+            <span className="version">v{appVersion}</span>
           </div>
           <div className="header-actions">
             <button
@@ -1642,19 +1734,32 @@ export default function App() {
               <Download size={17} />
               PDFを保存
             </button>
-            <button
-              className="secondary signature-button"
-              title={
-                window.lumaDesktop
+            {signedInput ? (
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (!original.current) return;
+                  setEditableCopySource({ bytes: original.current.slice(), name: filename, reason: "signed" });
+                  setEditableCopyError("");
+                }}
+                disabled={!pdf || !!busy}
+              >
+                <Copy size={17} />
+                編集用コピー
+              </button>
+            ) : (
+              <button
+                className="secondary signature-button"
+                title={window.lumaDesktop
                   ? "証明書で電子署名して別名保存"
-                  : "電子署名はデスクトップ版で利用できます"
-              }
-              onClick={() => setSignatureOpen(true)}
-              disabled={!pdf || !!busy || signedInput || !window.lumaDesktop}
-            >
-              <ShieldCheck size={17} />
-              署名して保存
-            </button>
+                  : "電子署名はデスクトップ版で利用できます"}
+                onClick={() => setSignatureOpen(true)}
+                disabled={!pdf || !!busy || !window.lumaDesktop}
+              >
+                <ShieldCheck size={17} />
+                署名して保存
+              </button>
+            )}
           </div>
         </div>
         <div className="toolbar">
@@ -2131,6 +2236,17 @@ export default function App() {
                       />
                     </label>
                   </div>
+                  <button
+                    type="button"
+                    className="aspect-lock-toggle"
+                    aria-label="縦横比をロック"
+                    aria-pressed={isAspectLocked(selected)}
+                    disabled={!!busy || signedInput}
+                    onClick={() => updateSelected({ aspectLocked: !isAspectLocked(selected) })}
+                  >
+                    {isAspectLocked(selected) ? <Lock size={16} /> : <LockOpen size={16} />}
+                    縦横比：{isAspectLocked(selected) ? "ロック中" : "自由に変更"}
+                  </button>
                   {selected.type !== "image" && selected.type !== "shape" && (
                     <label className="color-field">
                       色
@@ -2144,9 +2260,9 @@ export default function App() {
                     </label>
                   )}
                   <p className="help-text">
-                    {selected.type === "shape"
-                      ? "辺や角をドラッグすると、縦横を自由に変えられます。"
-                      : "四隅をドラッグしてサイズ変更。文字はダブルクリックで直接編集できます。"}
+                    {isAspectLocked(selected)
+                      ? "四隅をドラッグして縦横比を保ったままサイズ変更。文字はダブルクリックで直接編集できます。"
+                      : "辺や角をドラッグすると、縦横を自由に変えられます。文字はダブルクリックで直接編集できます。"}
                     数値欄は直接入力・横ドラッグで調整。矢印キーで素材の位置を微調整できます。
                   </p>
                   <button
@@ -2802,6 +2918,21 @@ export default function App() {
       {aiSettingsOpen && (
         <AiSettingsDialog onClose={() => setAiSettingsOpen(false)} />
       )}
+      {editableCopySource && (
+        <EditableCopyDialog
+          reason={editableCopySource.reason}
+          fileName={editableCopySource.name}
+          busy={!!busy}
+          error={editableCopyError}
+          onConvert={convertEditableCopy}
+          onClose={() => {
+            if (!busy) {
+              setEditableCopySource(null);
+              setEditableCopyError("");
+            }
+          }}
+        />
+      )}
       {certificateGuideOpen && (
         <CertificateGuide
           onClose={() => setCertificateGuideOpen(false)}
@@ -2932,7 +3063,7 @@ export default function App() {
               </button>
             )}
             <p className="help-text">
-              MVPではOS連携を別途セットアップします。書類の編集と印刷は、どちらのOSも同じ画面で操作できます。
+              OS連携は別途セットアップします。書類の編集と印刷は、どちらのOSも同じ画面で操作できます。
             </p>
           </section>
         </div>

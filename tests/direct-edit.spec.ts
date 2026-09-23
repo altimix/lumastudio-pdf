@@ -299,7 +299,8 @@ test('文字を角から拡大して一度で元に戻せ、矢印キーで微�
   const saved = await saveProject(page, testInfo);
   expect(saved.data.annotations[0].fontSize).toBeCloseTo(fontSize, 2);
   expect(saved.data.annotations[0].x).toBeCloseTo(51, 1);
-  expect(saved.data.annotations[0].y).toBeCloseTo(170, 1);
+  const scale = await page.getByTestId('pdf-surface').evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  expect(saved.data.annotations[0].y).toBeCloseTo(resized.before.y / scale + 10, 1);
   await page.reload();
   await page.getByTestId('project-input').setInputFiles(saved.path);
   await expect(annotation).toBeVisible();
@@ -565,7 +566,7 @@ test('二本指操作では文字を誤配置せず、既存素材の位置や�
   expect(saved.data.annotations).toHaveLength(1);
   expect(saved.data.annotations[0].text).toBe('位置を保つ');
   expect(saved.data.annotations[0].x).toBeCloseTo(70, 1);
-  expect(saved.data.annotations[0].y).toBeCloseTo(180, 1);
+  expect(saved.data.annotations[0].y + saved.data.annotations[0].height / 2).toBeCloseTo(180, 1);
   await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
   await openFixture(page, true);
   await expect(page.getByRole('button', { name: '文字を記入', exact: true })).toBeDisabled();

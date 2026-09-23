@@ -140,6 +140,22 @@ button, summary { font: inherit; }
 .faq-list details[open] summary::after { content: "−"; }
 .faq-list details p { max-width: 62ch; margin: -4px 0 25px; color: var(--muted); font-size: 13px; line-height: 2; }
 
+.contact-section { border-top: 1px solid var(--line); background: var(--wash); }
+.contact-grid { display: grid; grid-template-columns: .7fr 1.3fr; gap: 11%; align-items: start; }
+.contact-copy p { max-width: 62ch; margin: 3px 0 26px; color: var(--muted); line-height: 2; }
+.contact-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px 27px; }
+
+.privacy-page { max-width: 920px; padding-block: 90px 120px; }
+.privacy-page .section-label { margin-bottom: 14px; }
+.privacy-page h1 { margin: 0; font-size: clamp(42px, 5vw, 64px); letter-spacing: -.06em; line-height: 1.35; }
+.privacy-lead { max-width: 67ch; margin: 24px 0 52px; color: var(--muted); font-size: 16px; }
+.privacy-page section { border-top: 1px solid var(--line); padding: 27px 0 30px; }
+.privacy-page h2 { margin: 0 0 12px; font-size: 21px; }
+.privacy-page section p { max-width: 75ch; margin: 0; color: var(--muted); font-size: 14px; line-height: 2; }
+.privacy-page code { padding: 2px 5px; background: var(--wash); }
+.privacy-more { margin: 15px 0 0; font-size: 13px; }
+.privacy-page a { color: var(--green); }
+
 .site-footer { color: #dfece3; background: #173b32; }
 .footer-main { display: flex; justify-content: space-between; gap: 36px; padding-block: 49px 47px; }
 .footer-main .brand { color: white; font-size: 23px; }
@@ -187,7 +203,7 @@ button, summary { font: inherit; }
   .window-topline { min-height: 20px; padding: 0 6px 5px; font-size: 8px; }
   .window-dots i { width: 5px; height: 5px; }
   .section { padding-block: 84px; }
-  .split-heading, .safety-grid, .developer-grid, .faq-grid { grid-template-columns: 1fr; gap: 35px; }
+  .split-heading, .safety-grid, .developer-grid, .faq-grid, .contact-grid { grid-template-columns: 1fr; gap: 35px; }
   .split-heading > p { max-width: 56ch; }
   .steps { grid-template-columns: 1fr; }
   .steps li { padding: 22px 0; }
@@ -231,6 +247,7 @@ button, summary { font: inherit; }
   .download-title h3 { font-size: 27px; }
   .faq-list summary { font-size: 14px; }
   .footer-main { flex-direction: column; padding-block: 38px; }
+  .contact-actions .button { width: 100%; }
   .footer-main nav { justify-content: flex-start; }
   .footer-bottom { flex-direction: column; gap: 4px; }
 }

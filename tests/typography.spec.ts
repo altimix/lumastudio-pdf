@@ -148,7 +148,7 @@ test('同梱書体にない絵文字だけの文字欄も表示してPDFと作�
   expect((await PDFDocument.load(await readFile(path))).getPageCount()).toBe(1);
 });
 
-test('印鑑35四方とチェック12四方で配置し、旧作業データは従来書体で開く', async ({ page }, info) => {
+test('印鑑35四方とチェック15四方で配置し、旧作業データは従来書体で開く', async ({ page }, info) => {
   await open(page);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue('35');
@@ -158,14 +158,14 @@ test('印鑑35四方とチェック12四方で配置し、旧作業データは�
   await expect(page.getByRole('spinbutton', { name: '要素の高さ', exact: true })).toHaveValue('35');
   await page.getByRole('button', { name: 'チェック', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 150, y: 200 } });
-  await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('12');
-  await expect(page.getByRole('spinbutton', { name: '要素の高さ', exact: true })).toHaveValue('12');
+  await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('15');
+  await expect(page.getByRole('spinbutton', { name: '要素の高さ', exact: true })).toHaveValue('15');
   await page.getByRole('button', { name: '文字を記入', exact: true }).click();
   await page.getByLabel('記入する文字', { exact: true }).fill('従来の文字');
   await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 300 } });
   const saved = await project(page, info, 'sizes-and-legacy.lumapdf');
   expect(saved.data.annotations[0]).toMatchObject({ type: 'stamp', width: 35, height: 35 });
-  expect(saved.data.annotations[1]).toMatchObject({ type: 'check', width: 12, height: 12 });
+  expect(saved.data.annotations[1]).toMatchObject({ type: 'check', width: 15, height: 15 });
   const legacy = saved.data.annotations[2];
   saved.data.version = 1;
   delete legacy.fontFamily; delete legacy.fontWeight; delete legacy.fontStyle; delete legacy.underline;
@@ -173,6 +173,39 @@ test('印鑑35四方とチェック12四方で配置し、旧作業データは�
   await page.getByTestId('project-input').setInputFiles({ name: 'legacy.lumapdf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved.data)) });
   await page.getByRole('button', { name: '文字: 従来の文字', exact: true }).click();
   await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('legacy');
+});
+
+test('チェックをクリック中心に置き、縦横比ロックを切り替えて文字の縦位置も中央に置く', async ({ page }, info) => {
+  await open(page);
+  const surface = page.getByTestId('pdf-surface');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await page.getByRole('button', { name: 'チェック', exact: true }).click();
+  await surface.click({ position: { x: 150 * scale, y: 200 * scale } });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  const width = page.getByRole('spinbutton', { name: '要素の幅', exact: true });
+  const height = page.getByRole('spinbutton', { name: '要素の高さ', exact: true });
+  await width.fill('30'); await width.press('Enter');
+  await expect(height).toHaveValue('30');
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await width.fill('50'); await width.press('Enter');
+  await expect(height).toHaveValue('30');
+  await height.fill('40'); await height.press('Enter');
+  await expect(width).toHaveValue('50');
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await surface.click({ position: { x: 80 * scale, y: 300 * scale } });
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await input.fill('中央配置');
+  await input.press('ControlOrMeta+Enter');
+  const saved = await project(page, info, 'centered-materials.lumapdf');
+  expect(saved.data.annotations[0]).toMatchObject({ type: 'check', width: 50, height: 40, aspectLocked: false });
+  expect(saved.data.annotations[0].x).toBeCloseTo(142.5, 1);
+  expect(saved.data.annotations[0].y).toBeCloseTo(192.5, 1);
+  const text = saved.data.annotations[1];
+  expect(text.type).toBe('text');
+  expect(text.x).toBeCloseTo(80, 1);
+  expect(text.y + text.height / 2).toBeCloseTo(300, 1);
 });
 
 test('印鑑サイズを変更すると次の配置と再読み込み後にも同じ大きさを使う', async ({ page }) => {
