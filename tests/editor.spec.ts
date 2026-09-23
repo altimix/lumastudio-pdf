@@ -317,4 +317,18 @@ test('画像印鑑の変更サイズを次の配置と作業データ再開後�
   await page.getByRole('spinbutton', { name: '要素の幅', exact: true }).press('Enter');
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue('70');
+  const ratio = await page.getByRole('button', { name: '画像: 横印', exact: true }).first().evaluate(element => {
+    const style = (element as HTMLElement).style;
+    return parseFloat(style.width) / parseFloat(style.height);
+  });
+  const size = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await size.fill('1000');
+  await size.press('Enter');
+  await clickOriginalPoint(page, 20, 20);
+  const fittedWidth = Number(await page.getByRole('spinbutton', { name: '要素の幅', exact: true }).inputValue());
+  const fittedHeight = Number(await page.getByRole('spinbutton', { name: '要素の高さ', exact: true }).inputValue());
+  expect(fittedWidth).toBeLessThanOrEqual(595.28);
+  expect(fittedWidth / fittedHeight).toBeCloseTo(ratio, 1);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(size).toHaveValue('1000');
 });

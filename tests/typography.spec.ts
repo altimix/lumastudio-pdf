@@ -97,6 +97,9 @@ test('新しい字形の読み込み前に文字を確定しても保存デー�
     await expect.poll(() => blocked).toBeGreaterThan(0);
     await input.press('ControlOrMeta+Enter');
     await expect(page.getByRole('button', { name: `文字: ${text}`, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'チェック', exact: true }).click();
+    await page.getByTestId('pdf-surface').click({ position: { x: 250, y: 250 } });
+    await expect(page.locator('.annotation')).toHaveCount(2);
     await page.getByRole('button', { name: '作業データ', exact: true }).click();
     const event = page.waitForEvent('download');
     await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
@@ -105,12 +108,17 @@ test('新しい字形の読み込み前に文字を確定しても保存デー�
     const path = info.outputPath('fast-commit.lumapdf');
     await (await event).saveAs(path);
     const saved = JSON.parse(await readFile(path, 'utf8'));
-    const annotation = saved.annotations[0];
+    const annotation = saved.annotations.find((item: { type: string }) => item.type === 'text');
     const measured = await page.evaluate(async (value) => {
       const { measureTextHeight } = await import('/src/lib/fonts.ts');
       return measureTextHeight(value);
     }, annotation);
     expect(annotation.height).toBeGreaterThanOrEqual(measured - 0.01);
+    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(page.locator('.annotation')).toHaveCount(1);
+    const scale = await page.getByTestId('pdf-surface').evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+    const visibleHeight = await page.getByRole('button', { name: `文字: ${text}`, exact: true }).evaluate(element => parseFloat((element as HTMLElement).style.height));
+    expect(visibleHeight / scale).toBeCloseTo(annotation.height, 1);
   } finally {
     releaseFonts();
   }
@@ -182,6 +190,20 @@ test('印鑑サイズを変更すると次の配置と再読み込み後にも�
   await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('次の印');
   await page.getByTestId('pdf-surface').click({ position: { x: 90, y: 240 } });
   await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('62');
+});
+
+test('ページより大きい丸印も縦横比を保って用紙に収める', async ({ page }) => {
+  await open(page);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const size = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await size.fill('1000');
+  await size.press('Enter');
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('山田');
+  await page.getByTestId('pdf-surface').click({ position: { x: 60, y: 100 } });
+  await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('500');
+  await expect(page.getByRole('spinbutton', { name: '要素の高さ', exact: true })).toHaveValue('500');
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(size).toHaveValue('1000');
 });
 
 test('フォント読込が遅れても作業データ画面から入力欄へフォーカスを奪わない', async ({ page }) => {

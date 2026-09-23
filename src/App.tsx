@@ -317,17 +317,30 @@ export default function App() {
     if (!cleared && annotation.type === "text" && !isTextFontReady(annotation)) {
       const sheet = current.pages.find((page) => page.id === annotation.pageId);
       if (sheet) void resolveTextGeometry(annotation, sheet.height)
-        .then((resolved) => {
-          if (resolved === annotation || currentRef.current.busy) return;
-          const latest = editsRef.current;
-          if (!latest.annotations.some((item) => item === annotation)) return;
-          const repaired = {
-            ...latest,
-            annotations: latest.annotations.map((item) => item === annotation ? resolved : item),
-          };
-          history.current[cursor.current] = repaired;
-          editsRef.current = repaired;
-          setEdits(repaired);
+        .then(() => {
+          const active = history.current[cursor.current];
+          history.current = history.current.map((entry) => {
+            let changed = false;
+            const annotations = entry.annotations.map((item) => {
+              if (item.id !== annotation.id || item.type !== "text" ||
+                  item.text !== annotation.text || item.fontFamily !== annotation.fontFamily ||
+                  item.fontSize !== annotation.fontSize || item.fontWeight !== annotation.fontWeight ||
+                  item.fontStyle !== annotation.fontStyle || item.underline !== annotation.underline ||
+                  item.width !== annotation.width || item.height !== annotation.height) return item;
+              const page = entry.pages.find((candidate) => candidate.id === item.pageId);
+              if (!page) return item;
+              const height = Math.min(page.height - item.y, Math.max(item.height, measureTextHeight(item)));
+              if (height === item.height) return item;
+              changed = true;
+              return { ...item, height };
+            });
+            return changed ? { ...entry, annotations } : entry;
+          });
+          const repaired = history.current[cursor.current];
+          if (repaired !== active) {
+            editsRef.current = repaired;
+            setEdits(repaired);
+          }
         })
         .catch((error: unknown) => setError(String(error)));
     }
@@ -1215,8 +1228,14 @@ export default function App() {
       if (stamp.aspectRatio < 1) width *= stamp.aspectRatio;
       else height /= stamp.aspectRatio;
     }
-    width = Math.min(page.width, width);
-    height = Math.min(page.height, height);
+    if (tool === "stamp") {
+      const fit = Math.min(1, page.width / width, page.height / height);
+      width *= fit;
+      height *= fit;
+    } else {
+      width = Math.min(page.width, width);
+      height = Math.min(page.height, height);
+    }
     const annotation: Annotation = {
       id: crypto.randomUUID(),
       pageId: page.id,
