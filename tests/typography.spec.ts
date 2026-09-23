@@ -96,7 +96,16 @@ test('新しい字形の読み込み前に文字を確定しても保存デー�
     await input.fill(text);
     await expect.poll(() => blocked).toBeGreaterThan(0);
     await input.press('ControlOrMeta+Enter');
-    await expect(page.getByRole('button', { name: `文字: ${text}`, exact: true })).toBeVisible();
+    const placedText = page.getByRole('button', { name: `文字: ${text}`, exact: true });
+    await expect(placedText).toBeVisible();
+    const beforeWidth = await placedText.evaluate(element => parseFloat((element as HTMLElement).style.width));
+    const handle = await placedText.getByTestId('resize-se').boundingBox();
+    if (!handle) throw new Error('文字のサイズ変更ハンドルが見つかりません');
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 35, handle.y + handle.height / 2 + 20, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(() => placedText.evaluate(element => parseFloat((element as HTMLElement).style.width))).toBeGreaterThan(beforeWidth);
     await page.getByRole('button', { name: 'チェック', exact: true }).click();
     await page.getByTestId('pdf-surface').click({ position: { x: 250, y: 250 } });
     await expect(page.locator('.annotation')).toHaveCount(2);

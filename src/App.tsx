@@ -317,16 +317,19 @@ export default function App() {
     if (!cleared && annotation.type === "text" && !isTextFontReady(annotation)) {
       const sheet = current.pages.find((page) => page.id === annotation.pageId);
       if (sheet) void resolveTextGeometry(annotation, sheet.height)
-        .then(() => {
+        .then(async () => {
+          // A later move, resize, or style edit may have copied this annotation
+          // before its font finished loading. Prepare every matching history
+          // version so Undo/Redo never returns to fallback-font geometry.
+          const versions = history.current.flatMap((entry) => entry.annotations.filter((item) =>
+            item.id === annotation.id && item.type === "text" && item.text === annotation.text,
+          ));
+          await Promise.all(versions.map(ensureTextFont));
           const active = history.current[cursor.current];
           history.current = history.current.map((entry) => {
             let changed = false;
             const annotations = entry.annotations.map((item) => {
-              if (item.id !== annotation.id || item.type !== "text" ||
-                  item.text !== annotation.text || item.fontFamily !== annotation.fontFamily ||
-                  item.fontSize !== annotation.fontSize || item.fontWeight !== annotation.fontWeight ||
-                  item.fontStyle !== annotation.fontStyle || item.underline !== annotation.underline ||
-                  item.width !== annotation.width || item.height !== annotation.height) return item;
+              if (item.id !== annotation.id || item.type !== "text" || item.text !== annotation.text) return item;
               const page = entry.pages.find((candidate) => candidate.id === item.pageId);
               if (!page) return item;
               const height = Math.min(page.height - item.y, Math.max(item.height, measureTextHeight(item)));
