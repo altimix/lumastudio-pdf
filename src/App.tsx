@@ -443,23 +443,27 @@ export default function App() {
   ) => {
     const updated = { ...source, ...change };
     if (isAspectLocked(source) && ("width" in change || "height" in change)) {
+      const paddingWidth = source.type === "text" && source.width > 4 ? 4 : 0;
+      const paddingHeight = source.type === "text" && source.height > 6 ? 6 : 0;
+      const contentWidth = source.width - paddingWidth;
+      const contentHeight = source.height - paddingHeight;
       const ratio =
         "width" in change
-          ? updated.width / source.width
-          : updated.height / source.height;
+          ? (updated.width - paddingWidth) / contentWidth
+          : (updated.height - paddingHeight) / contentHeight;
       const maximum = Math.min(
-        sheet.width / source.width,
-        sheet.height / source.height,
+        (sheet.width - paddingWidth) / contentWidth,
+        (sheet.height - paddingHeight) / contentHeight,
         source.type === "text" ? 96 / (source.fontSize || 16) : Infinity,
       );
       const minimum = Math.max(
-        8 / source.width,
-        8 / source.height,
+        (8 - paddingWidth) / contentWidth,
+        (8 - paddingHeight) / contentHeight,
         source.type === "text" ? 6 / (source.fontSize || 16) : 0,
       );
       const bounded = Math.min(maximum, Math.max(Math.min(minimum, maximum), ratio));
-      updated.width = source.width * bounded;
-      updated.height = source.height * bounded;
+      updated.width = paddingWidth + contentWidth * bounded;
+      updated.height = paddingHeight + contentHeight * bounded;
       if (source.type === "text") updated.fontSize = Math.max(6, (source.fontSize || 16) * bounded);
     }
     updated.width = Math.min(sheet.width, Math.max(8, updated.width));
@@ -1154,6 +1158,15 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+      if (editableCopySource) {
+        const typingInDialog = e.target instanceof HTMLElement &&
+          !!e.target.closest("input, textarea, select, [contenteditable]");
+        const command = (e.metaKey || e.ctrlKey) && e.key.toLowerCase();
+        if (command === "s" || command === "p" ||
+          (!typingInDialog && (command === "z" || e.key === "Delete" || e.key === "Backspace")))
+          e.preventDefault();
+        return;
+      }
       if (
         profileOpen ||
         printHelp ||

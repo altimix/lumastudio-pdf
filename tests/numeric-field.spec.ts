@@ -28,7 +28,7 @@ async function projectData(page: Page, testInfo: TestInfo) {
   const path = testInfo.outputPath('numeric-fields.lumapdf');
   await (await download).saveAs(path);
   await expect(dialog).not.toBeVisible();
-  return JSON.parse(await readFile(path, 'utf8')) as { annotations: { fontSize: number; width: number }[] };
+  return JSON.parse(await readFile(path, 'utf8')) as { annotations: { fontSize: number; width: number; height: number; aspectLocked?: boolean }[] };
 }
 
 async function beginScrub(page: Page, input: Locator, delta: number, key?: 'Shift' | 'Alt') {
@@ -80,6 +80,28 @@ test('数値を空欄にして置き換え、確定時だけ範囲を適用し�
   await size.fill('120');
   await size.press('Enter');
   await expect(size).toHaveValue('96');
+});
+
+test('文字の縦横比ロック中は固定パディングを除いて幅と高さを数値変更する', async ({ page }, testInfo) => {
+  const { size } = await openText(page);
+  await size.fill('13');
+  await size.press('Enter');
+  const source = (await projectData(page, testInfo)).annotations[0];
+  const width = page.getByRole('spinbutton', { name: '要素の幅', exact: true });
+  const height = page.getByRole('spinbutton', { name: '要素の高さ', exact: true });
+  await width.fill('120');
+  await width.press('Enter');
+  const narrower = (await projectData(page, testInfo)).annotations[0];
+  const widthFactor = (narrower.width - 4) / (source.width - 4);
+  expect(narrower.aspectLocked).toBe(true);
+  expect(narrower.fontSize).toBeCloseTo(source.fontSize * widthFactor, 2);
+  expect(narrower.height).toBeCloseTo(6 + (source.height - 6) * widthFactor, 1);
+  await height.fill('30');
+  await height.press('Enter');
+  const taller = (await projectData(page, testInfo)).annotations[0];
+  const heightFactor = (taller.height - 6) / (narrower.height - 6);
+  expect(taller.width).toBeCloseTo(4 + (narrower.width - 4) * heightFactor, 1);
+  expect(taller.fontSize).toBeCloseTo(narrower.fontSize * heightFactor, 2);
 });
 
 test('横ドラッグのプレビューを一度で確定・Undoし、Esc・ウィンドウ離脱では取り消す', async ({ page }, testInfo) => {

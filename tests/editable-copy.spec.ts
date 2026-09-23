@@ -90,3 +90,33 @@ test('署名情報付きPDFは閲覧専用を保ち、明示操作で署名な�
   expect(saved.getForm().getFields()).toHaveLength(0);
   expect(await readFile(file)).toEqual(before);
 });
+
+test('編集用コピーの確認中に背後のPDFを保存・印刷・Undo・削除しない', async ({ page }) => {
+  const pdf = await PDFDocument.create();
+  pdf.addPage([500, 700]);
+  await page.goto('/');
+  await page.getByTestId('pdf-input').setInputFiles({ name: 'editing.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await page.getByRole('button', { name: 'チェック', exact: true }).click();
+  await page.getByTestId('pdf-surface').click({ position: { x: 150, y: 180 } });
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  page.on('dialog', dialog => dialog.accept());
+  await page.getByTestId('pdf-input').setInputFiles(fixture('locked-no-edit-permission.pdf'));
+  const dialog = page.getByRole('dialog', { name: '編集用コピーを作成' });
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => { window.print = () => { document.body.dataset.printCalled = 'yes'; }; });
+  let downloads = 0;
+  page.on('download', () => { downloads++; });
+  await dialog.getByRole('button', { name: '編集用コピーを作成' }).focus();
+  await page.keyboard.press('ControlOrMeta+s');
+  await page.keyboard.press('ControlOrMeta+p');
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.keyboard.press('Delete');
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  await expect(page.locator('body')).not.toHaveAttribute('data-print-called', 'yes');
+  await page.waitForTimeout(200);
+  expect(downloads).toBe(0);
+  await dialog.getByRole('button', { name: 'キャンセル' }).click();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+});
