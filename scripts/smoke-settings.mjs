@@ -79,7 +79,7 @@ try {
   assert.equal(initial.saved, false);
   assert.equal(initial.source, 'none');
 
-  const saved = await page.evaluate(key => window.lumaDesktop.saveAiSettings({ key, model: 'gpt-5.4-mini' }), fakeKey);
+  const saved = await page.evaluate(key => window.lumaDesktop.saveAiSettings({ key, model: 'gpt-6-sol' }), fakeKey);
   assertNoSecret(saved);
   assert.equal(saved.available, true);
   assert.equal(saved.saved, true);
@@ -88,6 +88,7 @@ try {
   assert.equal(rawFile.includes(fakeKey), false, 'Persistence must not contain plaintext');
   const stored = JSON.parse(rawFile);
   assert.deepEqual(Object.keys(stored).sort(), ['encryptedKey', 'model', 'version']);
+  assert.equal(stored.version, 2);
   assert.notEqual(stored.encryptedKey, Buffer.from(fakeKey).toString('base64'), 'Base64 encoding is not encryption');
   // Compare inside the main process; even this test never returns decrypted text.
   const decryptsCorrectly = await application.evaluate(async ({ safeStorage }, { encryptedKey, expected }) => {
@@ -98,10 +99,11 @@ try {
     return decoded === expected;
   }, { encryptedKey: stored.encryptedKey, expected: fakeKey });
   assert.equal(decryptsCorrectly, true);
-  // A second save verifies Windows replacement of an existing ciphertext file.
-  const updated = await page.evaluate(key => window.lumaDesktop.saveAiSettings({ key, model: 'gpt-local-persistence-test' }), fakeKey);
+  // A model-only save must keep the existing ciphertext without exposing or re-entering the key.
+  const updated = await page.evaluate(() => window.lumaDesktop.saveAiSettings({ key: '', model: 'gpt-6-luna' }));
   assertNoSecret(updated);
-  assert.equal(updated.model, 'gpt-local-persistence-test');
+  assert.equal(updated.model, 'gpt-6-luna');
+  assert.equal(JSON.parse(await fs.readFile(settingsFile, 'utf8')).encryptedKey, stored.encryptedKey);
   await close();
 
   page = await launch();
@@ -110,16 +112,16 @@ try {
   assert.equal(reopened.available, true);
   assert.equal(reopened.saved, true);
   assert.equal(reopened.source, 'saved');
-  assert.equal(reopened.model, 'gpt-local-persistence-test');
+  assert.equal(reopened.model, 'gpt-6-luna');
   assert.equal(reopened.warning, '');
   await page.getByRole('button', { name: 'AI設定', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'AIの設定', exact: true });
   await expect(dialog).toContainText('この端末に保存した設定');
   await expect(dialog.getByLabel('OpenAI APIキー', { exact: true })).toHaveValue('');
-  await expect(dialog.getByLabel('利用モデル', { exact: true })).toHaveValue('gpt-local-persistence-test');
+  await expect(dialog.getByLabel('利用モデル', { exact: true })).toHaveValue('gpt-6-luna');
   await page.screenshot({ path: path.join(output, 'reopened-settings.png'), fullPage: true });
-  await dialog.getByRole('button', { name: '保存したキーを削除', exact: true }).click();
-  await expect(dialog.getByRole('status')).toContainText('保存したAPIキーを削除しました');
+  await dialog.getByRole('button', { name: '保存したAI設定を削除', exact: true }).click();
+  await expect(dialog.getByRole('status')).toContainText('保存したAI設定を削除しました');
   const removed = await page.evaluate(() => window.lumaDesktop.getAiSettings());
   assertNoSecret(removed);
   assert.equal(removed.available, false);
@@ -133,7 +135,7 @@ try {
   const report = {
     result: 'passed', platform: process.platform, encryption: 'real Electron safeStorage / Windows DPAPI',
     mockedEncryption: false, fakeCredentialsOnly: true, persistedPlaintext: false, decryptedComparisonPassed: true,
-    restartRestoredSavedConfiguration: true, deletionRemovedCiphertextFile: true,
+    restartRestoredSavedConfiguration: true, modelOnlyChangePreservedCiphertext: true, deletionRemovedCiphertextFile: true,
     blockedNetworkAttempts, pageErrors, output,
     notExercised: ['OpenAI authentication or autofill', 'macOS Keychain', 'packaged binary'],
   };

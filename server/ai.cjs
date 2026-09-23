@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseEnv } = require('node:util');
+const { DEFAULT_AI_MODEL, normalizeAiModel } = require('./ai-models.cjs');
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -46,8 +47,8 @@ function readConfig(options = {}) {
     }
   }
   const apiKey = (env.OPENAI_API_KEY || fileEnv.OPENAI_API_KEY || '').trim();
-  const requestedModel = (env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || 'gpt-5.4-mini').trim();
-  const model = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/u.test(requestedModel) ? requestedModel : 'gpt-5.4-mini';
+  const requestedModel = (env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || DEFAULT_AI_MODEL).trim();
+  const model = normalizeAiModel(requestedModel);
   return { apiKey, model };
 }
 
@@ -256,6 +257,9 @@ function createAutofill(options = {}) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   return {
     getAiStatus() { return { available: Boolean(config.apiKey), model: config.model }; },
+    withModel(model) {
+      return createAutofill({ env: { OPENAI_API_KEY: config.apiKey, OPENAI_MODEL: model }, fetchImpl });
+    },
     async autofill(input) {
       const payload = validatePayload(input);
       if (!config.apiKey) fail('AI用のAPIキーが未設定です。手動での記入・押印は利用できます。', 'AI_UNAVAILABLE', 503);
@@ -277,7 +281,7 @@ function createAutofill(options = {}) {
           signal: AbortSignal.timeout(90000),
           body: JSON.stringify({
             model: config.model, store: false, instructions: INSTRUCTIONS,
-            ...(/^gpt-5(?:[.\-]|$)/u.test(config.model) ? { reasoning: { effort: 'medium' } } : {}),
+            reasoning: { effort: 'medium' },
             input: [{ role: 'user', content }], max_output_tokens: 10000,
             text: { format: { type: 'json_schema', name: 'pdf_field_placements', strict: true, schema: responseSchema() } },
           }),

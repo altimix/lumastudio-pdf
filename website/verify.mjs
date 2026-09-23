@@ -24,19 +24,19 @@ try {
   const structured = JSON.parse(await desktop.locator('script[type="application/ld+json"]').textContent() || '{}');
   assert.equal(structured['@type'], 'SoftwareApplication');
   assert.equal(structured.author?.name, '安藤昇');
-  assert.equal(structured.softwareVersion, '0.3.1');
+  assert.equal(structured.softwareVersion, '0.3.2');
   assert.equal(await desktop.locator('img:not([alt])').count(), 0);
   for (const selector of ['.workspace-frame img', '.developer-photo img']) {
     const image = desktop.locator(selector);
     await image.scrollIntoViewIfNeeded();
     assert.equal(await image.evaluate(async element => { await element.decode(); return element.naturalWidth > 100; }), true, `${selector} did not load`);
   }
-  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v0.3.1/';
+  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v0.3.2/';
   const downloads = {
-    'windows-setup': 'LumaStudio-PDF-0.3.1-windows-x64-setup.exe',
-    'windows-portable': 'LumaStudio-PDF-0.3.1-windows-x64-portable.exe',
-    'mac-arm64': 'LumaStudio-PDF-0.3.1-macos-arm64.dmg',
-    'mac-x64': 'LumaStudio-PDF-0.3.1-macos-x64.dmg',
+    'windows-setup': 'LumaStudio-PDF-0.3.2-windows-x64-setup.exe',
+    'windows-portable': 'LumaStudio-PDF-0.3.2-windows-x64-portable.exe',
+    'mac-arm64': 'LumaStudio-PDF-0.3.2-macos-arm64.dmg',
+    'mac-x64': 'LumaStudio-PDF-0.3.2-macos-x64.dmg',
     'mac-guide': 'README-Mac.txt',
     checksums: 'SHA256SUMS.txt',
     license: 'LICENSE.txt',

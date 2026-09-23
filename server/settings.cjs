@@ -4,12 +4,14 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { DEFAULT_AI_MODEL, isSupportedAiModel, normalizeAiModel } = require('./ai-models.cjs');
 
 async function createAiSettings({ directory, safeStorage, createAutofill, envPath, platform = process.platform }) {
   const filename = path.join(directory, 'ai-settings.json');
   const environment = createAutofill({ envPath });
   let active = environment;
   let saved = false;
+  let encryptedKey = null;
   let hasStoredSettings = false;
   let warning = '';
   let queue = Promise.resolve();
@@ -24,10 +26,13 @@ async function createAiSettings({ directory, safeStorage, createAutofill, envPat
     ? safeStorage.encryptStringAsync(value) : safeStorage.encryptString(value);
   const decrypt = async (value) => typeof safeStorage.decryptStringAsync === 'function'
     ? (await safeStorage.decryptStringAsync(value)).result : safeStorage.decryptString(value);
-  function validate(key, model) {
+  function validateKey(key) {
     if (typeof key !== 'string' || key.trim().length < 20 || key.length > 1024 || /\s/.test(key.trim())) throw new Error('APIキーを確認してください。キーだけを入力してください。');
-    if (typeof model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(model)) throw new Error('モデル名を確認してください。');
-    return { key: key.trim(), model };
+    return key.trim();
+  }
+  function validateModel(model) {
+    if (typeof model !== 'string' || !isSupportedAiModel(model)) throw new Error('モデルはGPT-6 SolまたはGPT-6 Lunaを選んでください。');
+    return model;
   }
   const service = (key, model) => createAutofill({ env: { OPENAI_API_KEY: key, OPENAI_MODEL: model } });
   const write = async (data) => {
@@ -43,10 +48,15 @@ async function createAiSettings({ directory, safeStorage, createAutofill, envPat
     hasStoredSettings = true;
     if (!stat.isFile() || stat.size > 32 * 1024) throw new Error('invalid');
     const data = JSON.parse(await fs.readFile(filename, 'utf8'));
-    if (data.version !== 1 || typeof data.encryptedKey !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.encryptedKey)) throw new Error('invalid');
-    if (!(await available())) throw new Error('unavailable');
-    const values = validate(await decrypt(Buffer.from(data.encryptedKey, 'base64')), data.model);
-    active = service(values.key, values.model); saved = true;
+    if (![1, 2].includes(data.version) || typeof data.model !== 'string') throw new Error('invalid');
+    const model = data.version === 1 ? normalizeAiModel(data.model) : validateModel(data.model);
+    if (typeof data.encryptedKey === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(data.encryptedKey)) {
+      if (!(await available())) throw new Error('unavailable');
+      const key = validateKey(await decrypt(Buffer.from(data.encryptedKey, 'base64')));
+      active = service(key, model); saved = true; encryptedKey = data.encryptedKey;
+    } else if (data.version === 2 && data.encryptedKey === undefined) {
+      active = environment.withModel(model);
+    } else throw new Error('invalid');
   } catch (error) {
     if (error?.code !== 'ENOENT') { hasStoredSettings = true; warning = '保存したAI設定を読み込めませんでした。必要ならAPIキーを登録し直してください。'; }
   }
@@ -60,20 +70,31 @@ async function createAiSettings({ directory, safeStorage, createAutofill, envPat
     async getSettings() { return { ...status(), canStore: await available() }; },
     save: (input) => exclusive(async () => {
       if (!(await available())) throw new Error('この環境ではAPIキーを安全に保存できません。OSの保管機能を確認してください。');
-      const values = validate(input?.key, input?.model || 'gpt-5.4-mini');
-      let encrypted;
-      try { encrypted = await encrypt(values.key); }
-      catch { throw new Error('OSの保管機能で暗号化できませんでした。設定は変更していません。'); }
-      const next = service(values.key, values.model);
-      try { await write({ version: 1, model: values.model, encryptedKey: encrypted.toString('base64') }); }
+      const model = validateModel(input?.model ?? DEFAULT_AI_MODEL);
+      if (typeof input?.key !== 'string') throw new Error('APIキーを確認してください。');
+      let next, nextEncryptedKey = null;
+      if (input.key.trim()) {
+        const key = validateKey(input.key);
+        let encrypted;
+        try { encrypted = await encrypt(key); }
+        catch { throw new Error('OSの保管機能で暗号化できませんでした。設定は変更していません。'); }
+        nextEncryptedKey = encrypted.toString('base64');
+        next = service(key, model);
+      } else if (saved && encryptedKey) {
+        next = active.withModel(model);
+        nextEncryptedKey = encryptedKey;
+      } else {
+        next = environment.withModel(model);
+      }
+      try { await write({ version: 2, model, ...(nextEncryptedKey ? { encryptedKey: nextEncryptedKey } : {}) }); }
       catch { throw new Error('設定を保存できませんでした。書き込み先の空き容量とアクセス権を確認してください。'); }
-      active = next; saved = true; hasStoredSettings = true; warning = '';
+      active = next; saved = Boolean(nextEncryptedKey); encryptedKey = nextEncryptedKey; hasStoredSettings = true; warning = '';
       return status();
     }),
     remove: () => exclusive(async () => {
       try { await fs.unlink(filename); }
       catch (error) { if (error?.code !== 'ENOENT') throw new Error('保存設定を削除できませんでした。'); }
-      active = environment; saved = false; hasStoredSettings = false; warning = '';
+      active = environment; saved = false; encryptedKey = null; hasStoredSettings = false; warning = '';
       return status();
     }),
   };

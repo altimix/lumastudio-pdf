@@ -25,12 +25,13 @@ describe('AI autofill boundary', () => {
   it('calls only the Responses API with strict output and no response storage', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(fakeResponse({ placements: [placement()], notes: [] }));
     const service = createAutofill({ env: { OPENAI_API_KEY: 'test-only-key' }, fetchImpl });
-    expect(service.getAiStatus()).toEqual({ available: true, model: 'gpt-5.4-mini' });
+    expect(service.getAiStatus()).toEqual({ available: true, model: 'gpt-6-sol' });
     const result = await service.autofill(payload());
     expect(result.placements).toEqual([placement()]);
     const [url, request] = fetchImpl.mock.calls[0];
     const body = JSON.parse(request.body);
     expect(url).toBe('https://api.openai.com/v1/responses');
+    expect(body.model).toBe('gpt-6-sol');
     expect(body.store).toBe(false);
     expect(body.reasoning).toEqual({ effort: 'medium' });
     expect(body.text.format.strict).toBe(true);
@@ -39,6 +40,17 @@ describe('AI autofill boundary', () => {
     expect(request.body).not.toContain('test-only-key');
     expect(JSON.stringify(result)).not.toContain('test-only-key');
     expect(JSON.stringify(service.getAiStatus())).not.toContain('test-only-key');
+  });
+
+  it('sends the selected Luna model and falls back to Sol for unsupported environment values', async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => fakeResponse({ placements: [], notes: [] }));
+    const service = createAutofill({ env: { OPENAI_API_KEY: 'test-only-key', OPENAI_MODEL: 'gpt-6-sol' }, fetchImpl });
+    const luna = service.withModel('gpt-6-luna');
+    expect(luna.getAiStatus()).toEqual({ available: true, model: 'gpt-6-luna' });
+    await luna.autofill(payload());
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).model).toBe('gpt-6-luna');
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).reasoning).toEqual({ effort: 'medium' });
+    expect(createAutofill({ env: { OPENAI_MODEL: 'gpt-5.4-mini' } }).getAiStatus().model).toBe('gpt-6-sol');
   });
 
   it('drops invented account numbers, mismatched field values, unknown pages, and unapproved stamps', () => {

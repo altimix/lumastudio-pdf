@@ -4,16 +4,18 @@ AIはPDFの空欄を探し、登録情報から文字と印鑑の**編集可能�
 
 ## 接続設定
 
-デスクトップ版では上部の「AI設定」から登録できます。保存キーはElectronのsafeStorageを使い、OSの保管機能で暗号化した状態で端末に保存します。保存したキーを画面へ読み戻すことはありません。暗号化を使えない環境では登録を停止します。削除後は既存の環境設定に戻り、設定ファイル自体は削除しません。Macの未公証試用版では、更新時にキーチェーンの確認が再度表示される場合があります。
+デスクトップ版では上部の「AI設定」から登録できます。モデルは **GPT-6 Sol** と **GPT-6 Luna** の2択で、初期値はSolです。保存したAPIキーを入力し直さず、モデルだけ切り替えられます。`.env` のキーを使う場合も、モデルの選択だけを端末に保存できます。
+
+保存キーはElectronのsafeStorageを使い、OSの保管機能で暗号化した状態で端末に保存します。保存したキーを画面へ読み戻すことはありません。暗号化を使えない環境では登録を停止します。「保存したAI設定を削除」すると端末側の設定ファイルを削除し、既存の環境設定に戻ります。Macの未公証試用版では、更新時にキーチェーンの確認が再度表示される場合があります。
 
 Node / Electronのメインプロセスだけが `.env` を読みます。開発時はプロジェクト直下、配布版はElectronのユーザーデータフォルダーの `.env` を利用します。`LUMA_ENV_PATH` で変更できます。
 
 ```dotenv
 OPENAI_API_KEY=your-key-here
-OPENAI_MODEL=gpt-5.4-mini
+OPENAI_MODEL=gpt-6-sol
 ```
 
-キーをGit管理・フロントエンドの環境変数・ブラウザーの保存領域に入れないでください。設定値はログに出力しません。キーがなくても通常のPDF編集・押印は使えます。
+`OPENAI_MODEL` を省略した場合もSolです。Lunaを使う場合は `gpt-6-luna` にします。以前の保存設定に未対応のモデル名がある場合は、保存済みキーを保ったままSolとして読み込みます。キーをGit管理・フロントエンドの環境変数・ブラウザーの保存領域に入れないでください。設定値はログに出力しません。キーがなくても通常のPDF編集・押印は使えます。
 
 ブラウザーでAIを試す場合は `node server/dev-api.mjs` を起動し、Viteの `/api` を `http://127.0.0.1:5194` へ転送します。開発画面は `http://127.0.0.1:5193` を使用します。APIはループバック接続とその画面のOriginのみを受け付けます。
 
@@ -39,4 +41,4 @@ AI記入を実行した場合だけ、選択したPDFページのPNG/JPEG画像�
 
 `server/ai.test.ts` はモック応答によって、値の捏造の除外・画像と登録情報のサイズ制限・押印無効時の除外・座標補正・秘密情報の非公開を確認します。モックテストは実文書の空欄認識精度やAPIへの接続成功を検証するものではありません。
 
-参照: [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)、[Images and vision](https://developers.openai.com/api/docs/guides/images-vision)、[GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini)。
+参照: [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)、[Images and vision](https://developers.openai.com/api/docs/guides/images-vision)、[GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)、[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)。
