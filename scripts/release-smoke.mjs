@@ -139,10 +139,31 @@ try {
   console.log(JSON.stringify({ stage: 'pen-input-complete', platform: process.platform, inkAnnotations: await page.getByRole('button', { name: /^ペン:/ }).count() }));
   await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
   console.log(JSON.stringify({ stage: 'pen-rendered', platform: process.platform }));
+  const projectPath = path.join(userData, 'ink-smoke.lumapdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, projectPath);
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '編集を再開できる作業データを保存しました' })).toBeVisible();
+  const savedProject = JSON.parse(await fs.readFile(projectPath, 'utf8'));
+  assert.equal(savedProject.version, 2);
+  assert.ok(savedProject.annotations.some(annotation => annotation.type === 'pen'));
+  const unsupportedVersion = Array.from(new TextEncoder().encode(JSON.stringify({ ...savedProject, version: 3 })));
+  await assert.rejects(
+    page.evaluate(data => window.lumaDesktop.saveProject(data, 'unsupported.lumapdf'), unsupportedVersion),
+    /対応していない作業データです。/,
+  );
+  console.log(JSON.stringify({ stage: 'project-v2-saved', platform: process.platform }));
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^ペン:/ })).toHaveCount(0);
+  // Undoing the saved edits leaves the document different from the saved copy.
+  await expect(page.locator('.unsaved')).toHaveCount(1);
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
   await expect(page.locator('.unsaved')).toHaveCount(0);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   const sealSize = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
@@ -154,7 +175,7 @@ try {
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   await expect(sealSize).toHaveValue('44');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, projectV2Saved: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
   if (application) {
     let closeTimer;

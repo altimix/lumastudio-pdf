@@ -267,7 +267,7 @@ function registerIpc() {
     if(!Array.isArray(data) || !data.length || data.length>100*1024*1024 || !data.every(n=>Number.isInteger(n)&&n>=0&&n<=255))throw new Error('作業データの形式またはサイズが正しくありません。');
     const bytes=Buffer.from(data);let content;
     try{content=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('作業データの形式が正しくありません。');}
-    if(content.app!=='LumaStudio PDF' || content.version!==1)throw new Error('対応していない作業データです。');
+    if(content.app!=='LumaStudio PDF' || (content.version!==1 && content.version!==2))throw new Error('対応していない作業データです。');
     const cleanName=path.basename(String(suggestedName || '作業データ.lumapdf')).replace(/[<>:"/\\|?*\x00-\x1f]/g,'_');
     const result=await dialog.showSaveDialog(mainWindow,{title:'編集を再開できる作業データを保存',defaultPath:path.join(app.getPath('documents'),cleanName.endsWith('.lumapdf')?cleanName:`${cleanName}.lumapdf`),filters:[{name:'LumaStudio PDF 作業データ',extensions:['lumapdf']}],properties:['showOverwriteConfirmation','createDirectory']});
     if(result.canceled || !result.filePath)return false;
