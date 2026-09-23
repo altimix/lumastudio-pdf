@@ -143,7 +143,12 @@ async function choosePdfs() {
   return files;
 }
 
+function sendMenuAction(action) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('luma:menu-action', action);
+}
+
 function setMenu() {
+  const action = (label, command) => ({ label, click: () => sendMenuAction(command) });
   const template = [];
   if (process.platform === 'darwin') template.push({ role: 'appMenu' });
   template.push({
@@ -153,12 +158,75 @@ function setMenu() {
         try { const pdf = await choosePdf(); if (pdf) enqueuePdf(pdf); }
         catch (error) { dialog.showErrorBox('PDFを開けませんでした', error.message); }
       } },
+      action('PDFを結合…', 'merge-pdf'),
+      { type: 'separator' },
+      action('PDFを保存…', 'save-pdf'),
+      action('作業データを開く…', 'open-project'),
+      action('作業データを保存…', 'save-project'),
+      action('印刷…', 'print-pdf'),
+      action('証明書で署名して保存…', 'sign-pdf'),
+      { type: 'separator' },
       { label: '印刷受信箱を開く', click: () => void shell.openPath(printInbox) },
       { type: 'separator' },
-      process.platform === 'darwin' ? { role: 'close' } : { role: 'quit', label: '終了' },
+      process.platform === 'darwin' ? { role: 'close', label: 'ウィンドウを閉じる' } : { role: 'quit', label: '終了' },
     ],
-  }, { role: 'editMenu', label: '編集' }, {
-    label: '表示', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }, { label: '元のサイズに戻す', click: restoreMainWindow }],
+  }, {
+    label: '編集', submenu: [
+      { role: 'undo', label: '元に戻す' },
+      { role: 'redo', label: 'やり直す' },
+      { type: 'separator' },
+      action('PDF編集を元に戻す', 'undo-edit'),
+      action('PDF編集をやり直す', 'redo-edit'),
+      { type: 'separator' },
+      { role: 'cut', label: '切り取り' },
+      { role: 'copy', label: 'コピー' },
+      { role: 'paste', label: '貼り付け' },
+      { role: 'pasteAndMatchStyle', label: '書式を合わせて貼り付け' },
+      { role: 'delete', label: '削除' },
+      { type: 'separator' },
+      { role: 'selectAll', label: 'すべて選択' },
+    ],
+  }, {
+    label: '表示', submenu: [
+      action('PDFを拡大', 'zoom-in'),
+      action('PDFを縮小', 'zoom-out'),
+      action('幅に合わせる', 'fit-width'),
+      action('ページ全体に合わせる', 'fit-page'),
+      action('ページ一覧を表示・隠す', 'toggle-pages'),
+      { type: 'separator' },
+      { role: 'resetZoom', label: '画面倍率を元に戻す' },
+      { role: 'zoomIn', label: '画面を拡大' },
+      { role: 'zoomOut', label: '画面を縮小' },
+      { type: 'separator' },
+      { role: 'togglefullscreen', label: '全画面表示を切り替え' },
+      { label: '元のサイズに戻す', click: restoreMainWindow },
+    ],
+  }, {
+    label: 'ページ', submenu: [
+      action('前のページへ', 'previous-page'),
+      action('次のページへ', 'next-page'),
+      { type: 'separator' },
+      action('順序を前へ', 'move-page-before'),
+      action('順序を後ろへ', 'move-page-after'),
+      action('右へ回転', 'rotate-page'),
+      action('ページを削除', 'delete-page'),
+    ],
+  }, {
+    label: '道具', submenu: [
+      action('選択・移動', 'tool-select'),
+      action('手のひら・スクロール', 'tool-hand'),
+      { type: 'separator' },
+      action('文字を記入', 'tool-text'),
+      action('印鑑', 'tool-stamp'),
+      action('チェック', 'tool-check'),
+      action('画像', 'tool-image'),
+      action('図形', 'tool-shape'),
+      action('ペン', 'tool-pen'),
+      action('蛍光ペン', 'tool-marker'),
+      action('消しゴム', 'tool-eraser'),
+      { type: 'separator' },
+      action('AI自動記入…', 'ai-autofill'),
+    ],
   });
   if (!app.isPackaged) template.push({ label: '開発', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

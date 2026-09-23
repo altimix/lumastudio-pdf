@@ -37,6 +37,12 @@ const printInbox = path.join(userData, 'print-inbox');
 await fs.mkdir(printInbox);
 const env = { ...process.env, LUMA_ENV_PATH: path.join(userData, 'no-api-key.env'), LUMA_PRINT_INBOX: printInbox };
 for (const key of ['ELECTRON_RUN_AS_NODE', 'VITE_DEV_SERVER_URL', 'OPENAI_API_KEY']) delete env[key];
+const clickMenu = (application, menuLabel, itemLabel) => application.evaluate(({ Menu }, labels) => {
+  const parent = Menu.getApplicationMenu()?.items.find(item => item.label === labels.menuLabel);
+  const item = parent?.submenu?.items.find(candidate => candidate.label === labels.itemLabel);
+  if (!item?.click) throw new Error(`メニューが見つかりません: ${labels.menuLabel} / ${labels.itemLabel}`);
+  item.click();
+}, { menuLabel, itemLabel });
 let application;
 const errors = [];
 try {
@@ -67,6 +73,23 @@ try {
   assert.equal(bridge.aiAvailable, false);
   assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
   console.log(JSON.stringify({ stage: 'desktop-bridge-ready', platform: process.platform }));
+  const menus = await application.evaluate(({ Menu }) => Object.fromEntries(
+    Menu.getApplicationMenu().items.filter(item => item.submenu).map(item => [
+      item.label, item.submenu.items.filter(child => child.type !== 'separator').map(child => child.label),
+    ]),
+  ));
+  assert.deepEqual(menus['編集'], [
+    '元に戻す', 'やり直す', 'PDF編集を元に戻す', 'PDF編集をやり直す', '切り取り', 'コピー',
+    '貼り付け', '書式を合わせて貼り付け', '削除', 'すべて選択',
+  ]);
+  assert.deepEqual(menus['表示'], [
+    'PDFを拡大', 'PDFを縮小', '幅に合わせる', 'ページ全体に合わせる', 'ページ一覧を表示・隠す',
+    '画面倍率を元に戻す', '画面を拡大', '画面を縮小', '全画面表示を切り替え', '元のサイズに戻す',
+  ]);
+  for (const [group, label] of [['ファイル', '作業データを保存…'], ['ページ', '右へ回転'], ['道具', '蛍光ペン']]) {
+    assert.ok(menus[group]?.includes(label), `${group}メニューに${label}がありません。`);
+  }
+  console.log(JSON.stringify({ stage: 'japanese-menu-ready', platform: process.platform }));
   const initialWindowState = await page.evaluate(() => window.lumaDesktop.getWindowState());
   assert.equal(typeof initialWindowState.maximized, 'boolean');
   assert.equal(typeof initialWindowState.fullScreen, 'boolean');
@@ -107,6 +130,18 @@ try {
     return ink > 500;
   });
   console.log(JSON.stringify({ stage: 'sample-pdf-rendered', platform: process.platform }));
+  await expect(page.getByRole('heading', { name: 'ページ情報' })).toBeVisible();
+  await expect(page.getByText('必要事項を記入')).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'このページの操作' })).toBeVisible();
+  await clickMenu(application, '表示', 'ページ一覧を表示・隠す');
+  await expect(page.locator('.pages-panel')).toHaveCount(0);
+  await clickMenu(application, '表示', 'ページ一覧を表示・隠す');
+  await expect(page.locator('.pages-panel')).toBeVisible();
+  const beforeRotation = await page.getByTestId('pdf-surface').boundingBox();
+  await clickMenu(application, 'ページ', '右へ回転');
+  await expect.poll(async () => (await page.getByTestId('pdf-surface').boundingBox())?.width ?? 0).not.toBeCloseTo(beforeRotation.width, 0);
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.locator('.unsaved')).toHaveCount(0);
   await page.getByRole('button', { name: '文字を記入', exact: true }).click();
   await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('noto-sans-jp');
   await expect(page.getByRole('spinbutton', { name: '文字サイズ', exact: true })).toHaveValue('11');
@@ -130,7 +165,8 @@ try {
   await page.getByRole('button', { name: '図形', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 210, y: 340 } });
   await expect(page.locator('.annotation.selected .annotation-resize-handle')).toHaveCount(8);
-  await page.getByRole('button', { name: 'ペン', exact: true }).click();
+  await clickMenu(application, '道具', 'ペン');
+  await expect(page.getByRole('button', { name: 'ペン', exact: true })).toHaveClass(/active/);
   const inkLayer = page.getByTestId('ink-input-layer');
   await expect(inkLayer).toBeVisible();
   // A click confirms packaged Electron pointer input and ink rendering. The
@@ -143,8 +179,7 @@ try {
   await application.evaluate(({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, projectPath);
-  await page.getByRole('button', { name: '作業データ', exact: true }).click();
-  await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
+  await clickMenu(application, 'ファイル', '作業データを保存…');
   await expect(page.getByRole('status').filter({ hasText: '編集を再開できる作業データを保存しました' })).toBeVisible();
   const savedProject = JSON.parse(await fs.readFile(projectPath, 'utf8'));
   assert.equal(savedProject.version, 2);

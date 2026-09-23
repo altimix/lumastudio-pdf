@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld('lumaDesktop', {
     ipcRenderer.on('luma:window-state', listener);
     return () => ipcRenderer.removeListener('luma:window-state', listener);
   },
+  onMenuAction: (callback) => {
+    if (typeof callback !== 'function') throw new TypeError('A callback is required.');
+    const listener = (_event, action) => {
+      if (typeof action === 'string') callback(action);
+    };
+    ipcRenderer.on('luma:menu-action', listener);
+    return () => ipcRenderer.removeListener('luma:menu-action', listener);
+  },
   openPdf: () => ipcRenderer.invoke('luma:open-pdf'),
   openPdfs: () => ipcRenderer.invoke('luma:open-pdfs'),
   openProject: () => ipcRenderer.invoke('luma:open-project'),

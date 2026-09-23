@@ -75,7 +75,7 @@ try {
     statusKeys: Object.keys(await window.lumaDesktop.getAiStatus()).sort(),
     inbox: await window.lumaDesktop.getPrintInbox(),
   }));
-  assert.deepEqual(bridge.methods, ['autofill', 'getAiStatus', 'getAiSettings', 'saveAiSettings', 'removeAiSettings', 'openHelpLink', 'getPrintInbox', 'onOpenPdf', 'openPdf', 'openPdfs', 'openProject', 'saveProject', 'openPrintInbox', 'printPdf', 'savePdf', 'chooseCertificate', 'inspectCertificate', 'signAndSavePdf', 'getWindowState', 'restoreWindow', 'onWindowStateChange'].sort());
+  assert.deepEqual(bridge.methods, ['autofill', 'getAiStatus', 'getAiSettings', 'saveAiSettings', 'removeAiSettings', 'openHelpLink', 'getPrintInbox', 'onOpenPdf', 'openPdf', 'openPdfs', 'openProject', 'saveProject', 'openPrintInbox', 'printPdf', 'savePdf', 'chooseCertificate', 'inspectCertificate', 'signAndSavePdf', 'getWindowState', 'restoreWindow', 'onWindowStateChange', 'onMenuAction'].sort());
   assert.equal(bridge.nodeProcess, 'undefined');
   assert.equal(bridge.nodeRequire, 'undefined');
   assert.deepEqual(bridge.statusKeys, ['available', 'model']);

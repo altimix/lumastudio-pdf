@@ -1,10 +1,17 @@
 export {};
+type DesktopMenuAction =
+  | "merge-pdf" | "save-pdf" | "open-project" | "save-project" | "print-pdf" | "sign-pdf"
+  | "undo-edit" | "redo-edit" | "zoom-in" | "zoom-out" | "fit-width" | "fit-page" | "toggle-pages"
+  | "previous-page" | "next-page" | "move-page-before" | "move-page-after" | "rotate-page" | "delete-page"
+  | "tool-select" | "tool-hand" | "tool-text" | "tool-stamp" | "tool-check" | "tool-image"
+  | "tool-shape" | "tool-pen" | "tool-marker" | "tool-eraser" | "ai-autofill";
 declare global {
   interface Window {
     lumaDesktop?: {
       getWindowState(): Promise<{ maximized: boolean; fullScreen: boolean }>;
       restoreWindow(): Promise<void>;
       onWindowStateChange(callback: (state: { maximized: boolean; fullScreen: boolean }) => void): () => void;
+      onMenuAction(callback: (action: DesktopMenuAction) => void): () => void;
       openPdf(): Promise<{ name: string; data: number[] } | null>;
       openPdfs(): Promise<{ name: string; data: number[] }[]>;
       openProject(): Promise<{ name: string; data: number[] } | null>;
