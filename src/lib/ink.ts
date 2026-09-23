@@ -41,13 +41,39 @@ function segmentDistance(point: InkPoint, a: InkPoint, b: InkPoint): number {
   return Math.hypot(point.x - a.x - factor * dx, point.y - a.y - factor * dy)
 }
 
-/** Erase only annotations made by the pen or marker; the source PDF is untouched. */
-export function inkHitTest(annotation: Annotation, point: InkPoint, eraserRadius = 8): boolean {
+function crossedSegments(a: InkPoint, b: InkPoint, c: InkPoint, d: InkPoint): boolean {
+  const ab = { x: b.x - a.x, y: b.y - a.y }
+  const cd = { x: d.x - c.x, y: d.y - c.y }
+  const cross = (first: InkPoint, second: InkPoint) => first.x * second.y - first.y * second.x
+  const denominator = cross(ab, cd)
+  if (Math.abs(denominator) < 1e-9) return false
+  const ac = { x: c.x - a.x, y: c.y - a.y }
+  const t = cross(ac, cd) / denominator
+  const u = cross(ac, ab) / denominator
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1
+}
+
+/** Include the whole cursor path, so a quick eraser swipe cannot jump over a line. */
+export function inkStrokeIntersectsSegment(annotation: Annotation, start: InkPoint, end: InkPoint, eraserRadius = 8): boolean {
   if ((annotation.type !== 'pen' && annotation.type !== 'marker') || !annotation.points?.length) return false
   const radius = eraserRadius + (annotation.strokeWidth ?? 2) / 2
-  if (point.x < annotation.x - radius || point.x > annotation.x + annotation.width + radius ||
-    point.y < annotation.y - radius || point.y > annotation.y + annotation.height + radius) return false
+  if (Math.max(start.x, end.x) < annotation.x - radius || Math.min(start.x, end.x) > annotation.x + annotation.width + radius ||
+    Math.max(start.y, end.y) < annotation.y - radius || Math.min(start.y, end.y) > annotation.y + annotation.height + radius) return false
   const path = annotation.points.map(p => ({ x: annotation.x + p.x * annotation.width, y: annotation.y + p.y * annotation.height }))
-  if (path.length === 1) return Math.hypot(point.x - path[0].x, point.y - path[0].y) <= radius
-  return path.slice(1).some((next, index) => segmentDistance(point, path[index], next) <= radius)
+  if (path.length === 1) return segmentDistance(path[0], start, end) <= radius
+  return path.slice(1).some((next, index) => {
+    const previous = path[index]
+    if (crossedSegments(start, end, previous, next)) return true
+    return Math.min(
+      segmentDistance(start, previous, next),
+      segmentDistance(end, previous, next),
+      segmentDistance(previous, start, end),
+      segmentDistance(next, start, end),
+    ) <= radius
+  })
+}
+
+/** Erase only annotations made by the pen or marker; the source PDF is untouched. */
+export function inkHitTest(annotation: Annotation, point: InkPoint, eraserRadius = 8): boolean {
+  return inkStrokeIntersectsSegment(annotation, point, point, eraserRadius)
 }

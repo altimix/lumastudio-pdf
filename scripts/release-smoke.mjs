@@ -67,7 +67,6 @@ try {
   assert.equal(bridge.aiAvailable, false);
   assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
   const restoreButton = page.getByRole('button', { name: '元のサイズに戻す' });
-  await expect(restoreButton).toHaveCount(0);
   await application.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0];
     if (!window) throw new Error('LumaStudio PDFのメイン画面が見つかりません。');

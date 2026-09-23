@@ -294,7 +294,7 @@ export function usePdfViewport({
         event.pointerType === "touch" &&
         !interactiveTarget(event.target) &&
         !(
-          event.target instanceof Element && event.target.closest(".annotation")
+          event.target instanceof Element && event.target.closest(".annotation, .ink-input-layer")
         );
       if (!immediate && !backgroundTouch) return;
       pan.current = {

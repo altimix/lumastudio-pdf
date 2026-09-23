@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInkAnnotation, inkHitTest, MAX_INK_POINTS } from './ink'
+import { createInkAnnotation, inkHitTest, inkStrokeIntersectsSegment, MAX_INK_POINTS } from './ink'
 
 const page = { id: 'page', width: 500, height: 700 }
 
@@ -21,6 +21,14 @@ describe('editable pen and marker paths', () => {
     expect(inkHitTest(marker, { x: 300, y: 250 })).toBe(true)
     expect(inkHitTest({ ...marker, type: 'text' }, { x: 300, y: 250 })).toBe(false)
     expect(inkHitTest(marker, { x: 350, y: 250 })).toBe(false)
+  })
+
+  it('erases a stroke crossed between two distant pointer events', () => {
+    const line = createInkAnnotation('line', page, 'pen', [{ x: 50, y: 100 }, { x: 250, y: 100 }], '#000000', 2)
+    expect(inkHitTest(line, { x: 150, y: 50 })).toBe(false)
+    expect(inkHitTest(line, { x: 150, y: 150 })).toBe(false)
+    expect(inkStrokeIntersectsSegment(line, { x: 150, y: 50 }, { x: 150, y: 150 })).toBe(true)
+    expect(inkStrokeIntersectsSegment(line, { x: 300, y: 50 }, { x: 300, y: 150 })).toBe(false)
   })
 
   it('limits a single stroke before it can bloat a saved project', () => {

@@ -22,7 +22,7 @@ import {
   isAspectLocked,
   type ResizeHandle,
 } from "../lib/annotation-geometry";
-import { inkHitTest, MAX_INK_POINTS, type InkKind, type InkPoint } from "../lib/ink";
+import { inkStrokeIntersectsSegment, MAX_INK_POINTS, type InkKind, type InkPoint } from "../lib/ink";
 import "./PdfPage.css";
 
 export function AnnotationVisual({
@@ -154,6 +154,7 @@ type InkGesture = {
   kind: InkKind | 'eraser';
   points: InkPoint[];
   straight: boolean;
+  lastPoint: InkPoint;
   eraseIds: Set<string>;
 };
 const CORNERS: Array<{ corner: ResizeHandle; label: string }> = [
@@ -460,7 +461,8 @@ export function PdfPage({
     return { x: Math.max(0, Math.min(page.width, point.x)), y: Math.max(0, Math.min(page.height, point.y)) };
   };
   const collectEraseHits = (point: InkPoint, gesture: InkGesture) => {
-    for (const annotation of annotations) if (inkHitTest(annotation, point)) gesture.eraseIds.add(annotation.id);
+    for (const annotation of annotations) if (inkStrokeIntersectsSegment(annotation, gesture.lastPoint, point)) gesture.eraseIds.add(annotation.id);
+    gesture.lastPoint = point;
     setPendingEraseIds(new Set(gesture.eraseIds));
   };
   const appendInkPoint = (gesture: InkGesture, point: InkPoint) => {
@@ -910,7 +912,7 @@ export function PdfPage({
               event.preventDefault();
               event.stopPropagation();
               const point = toInkPoint(event.clientX, event.clientY);
-              const gesture: InkGesture = { pointerId: event.pointerId, kind: inkTool, points: [point], straight: event.shiftKey, eraseIds: new Set() };
+              const gesture: InkGesture = { pointerId: event.pointerId, kind: inkTool, points: [point], straight: event.shiftKey, lastPoint: point, eraseIds: new Set() };
               inkGesture.current = gesture;
               if (inkTool === 'eraser') { setEraserPoint(point); collectEraseHits(point, gesture); }
               else setInkPreview([point]);

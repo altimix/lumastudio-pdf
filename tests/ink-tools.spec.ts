@@ -12,7 +12,7 @@ async function openFixture(page: Page) {
   await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
 }
 
-async function dragOnPage(page: Page, from: [number, number], to: [number, number], shift = false) {
+async function dragOnPage(page: Page, from: [number, number], to: [number, number], shift = false, steps = 10) {
   const surface = page.getByTestId('pdf-surface');
   const box = await surface.boundingBox();
   if (!box) throw new Error('PDFが表示されていません');
@@ -20,7 +20,7 @@ async function dragOnPage(page: Page, from: [number, number], to: [number, numbe
   if (shift) await page.keyboard.down('Shift');
   await page.mouse.move(box.x + from[0] * scale, box.y + from[1] * scale);
   await page.mouse.down();
-  await page.mouse.move(box.x + to[0] * scale, box.y + to[1] * scale, { steps: 10 });
+  await page.mouse.move(box.x + to[0] * scale, box.y + to[1] * scale, { steps });
   await page.mouse.up();
   if (shift) await page.keyboard.up('Shift');
 }
@@ -95,7 +95,7 @@ test('消しゴムは描いた線だけを消し、一操作のUndoと作業デ�
   await page.getByRole('button', { name: '消しゴム', exact: true }).click();
   await page.mouse.click(box.x + 300 * scale, box.y + 400 * scale);
   await expect(page.locator('.annotation')).toHaveCount(3);
-  await page.mouse.click(box.x + 150 * scale, box.y + 320 * scale);
+  await dragOnPage(page, [150, 280], [150, 360], false, 1);
   await expect(page.locator('.annotation')).toHaveCount(2);
   const saved = await project(page, info, 'ink-after-erase.lumapdf');
   expect(saved.data.annotations.map(item => item.type)).toEqual(['check', 'pen']);
@@ -178,6 +178,29 @@ test('描画中のEscと二本指ピンチでは手書き線を確定しない',
     await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }, { x: x + 80, y: y + 50, id: 2 }] });
     await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 25, y: y - 15, id: 1 }, { x: x + 105, y: y + 65, id: 2 }] });
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x: x - 25, y: y - 15, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(page.locator('.annotation')).toHaveCount(0);
+  } finally {
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await session.detach();
+  }
+});
+
+test('一本指のタッチで描画・消去でき、背景パンに奪われない', async ({ page }) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: 'ペン', exact: true }).click();
+  const box = await page.getByTestId('pdf-surface').boundingBox();
+  if (!box) throw new Error('PDFが表示されていません');
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + 100, y: box.y + 200, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + 200, y: box.y + 250, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
+    await page.getByRole('button', { name: '消しゴム', exact: true }).click();
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + 150, y: box.y + 170, id: 2 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + 150, y: box.y + 280, id: 2 }] });
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect(page.locator('.annotation')).toHaveCount(0);
   } finally {
