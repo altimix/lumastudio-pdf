@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell, session, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell, session, safeStorage } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -167,8 +167,13 @@ function setMenu() {
 function createWindow() {
   rendererReady = false;
   receiving = false;
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const minWidth = Math.min(980, workArea.width);
+  const minHeight = Math.min(680, workArea.height);
   mainWindow = new BrowserWindow({
-    width: 1480, height: 970, minWidth: 980, minHeight: 680,
+    width: Math.min(1480, Math.max(minWidth, workArea.width - 80)),
+    height: Math.min(970, Math.max(minHeight, workArea.height - 80)),
+    minWidth, minHeight,
     title: 'LumaStudio PDF', backgroundColor: '#f5f7fa', show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

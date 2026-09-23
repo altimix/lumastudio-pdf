@@ -73,7 +73,9 @@ try {
     window.maximize();
   });
   await expect(restoreButton).toBeVisible({ timeout: 30_000 });
+  await restoreButton.focus();
   await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => window.lumaDesktop.getWindowState()), { timeout: 30_000 }).toMatchObject({ maximized: false, fullScreen: false });
   await expect(restoreButton).toHaveCount(0, { timeout: 30_000 });
   const fullScreenable = await application.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0];
