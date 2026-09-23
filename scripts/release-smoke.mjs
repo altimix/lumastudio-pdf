@@ -100,8 +100,17 @@ try {
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await expect(page.locator('.unsaved')).toHaveCount(0);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const sealSize = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await sealSize.fill('44');
+  await sealSize.press('Enter');
+  await page.reload();
+  await page.getByRole('button', { name: 'サンプルの書類で試す' }).click();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(sealSize).toHaveValue('44');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
   if (application) await application.close();
 }

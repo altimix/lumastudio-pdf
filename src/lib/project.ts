@@ -182,6 +182,10 @@ function validateProject(value: unknown): PdfProject {
       if (annotation.stampShape !== 'circle' && annotation.stampShape !== 'square') fail('印鑑の形が不正です。')
       result.stampShape = annotation.stampShape
     }
+    if (annotation.stampSource !== undefined) {
+      if (type !== 'image' || annotation.stampSource !== true) fail('画像印鑑の種類が不正です。')
+      result.stampSource = true
+    }
     if (type === 'shape' || annotation.shapeKind !== undefined) {
       if (annotation.shapeKind !== 'rectangle' && annotation.shapeKind !== 'ellipse' && annotation.shapeKind !== 'triangle') fail('図形の種類が不正です。')
       result.shapeKind = annotation.shapeKind

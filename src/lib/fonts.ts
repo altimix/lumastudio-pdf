@@ -37,20 +37,24 @@ export function textFontCss(annotation: TextStyle, sizeOverride?: number): strin
 }
 
 const textLoads = new WeakMap<FontFaceSet, Map<string, Promise<void>>>()
+const fallbackTexts = new WeakMap<FontFaceSet, Set<string>>()
 const FALLBACK_SAMPLE = '日本語 ABC 123'
 const requestedText = (annotation: Partial<Pick<Annotation, 'text'>>) => annotation.text || FALLBACK_SAMPLE
+const requestKey = (annotation: TextStyle & Partial<Pick<Annotation, 'text'>>) => `${textFontCss(annotation)}\u0000${requestedText(annotation)}`
 
 export function isTextFontReady(annotation: TextStyle & Partial<Pick<Annotation, 'text'>>): boolean {
   if (!annotation.fontFamily || annotation.fontFamily === 'legacy') return true
   if (typeof document === 'undefined' || !document.fonts) return false
+  const fonts = document.fonts
+  if (fallbackTexts.get(fonts)?.has(requestKey(annotation))) return true
   const family = FAMILY_NAMES[annotation.fontFamily]
   let found = false, loaded = false
-  document.fonts.forEach((face) => {
+  fonts.forEach((face) => {
     if (face.family.replace(/^["']|["']$/g, '') !== family) return
     found = true
     if (face.status === 'loaded') loaded = true
   })
-  return found && loaded && document.fonts.check(textFontCss(annotation), requestedText(annotation))
+  return found && loaded && fonts.check(textFontCss(annotation), requestedText(annotation))
 }
 
 /**
@@ -78,7 +82,7 @@ export async function ensureTextFont(annotation: TextStyle & Pick<Annotation, 't
   if (isTextFontReady(annotation)) return
   const faceCss = textFontCss(annotation)
   const text = requestedText(annotation)
-  const key = `${faceCss}\u0000${text}`
+  const key = requestKey(annotation)
   let loads = textLoads.get(fonts)
   if (!loads) {
     loads = new Map()
@@ -88,8 +92,16 @@ export async function ensureTextFont(annotation: TextStyle & Pick<Annotation, 't
   if (!pending) {
     pending = (async () => {
       const faces = await fonts.load(faceCss, text)
-      if (!faces.some((face) => face.family.replace(/^["']|["']$/g, '') === family) || !fonts.check(faceCss, text))
+      if (!fonts.check(faceCss, text))
         throw new Error('同梱フォントを読み込めませんでした。アプリを再起動してから、もう一度お試しください。')
+      // Unsupported glyphs (notably emoji) are deliberately rendered with
+      // the browser's system fallback instead of blocking preview and save.
+      if (!faces.some((face) => face.family.replace(/^["']|["']$/g, '') === family)) {
+        let ready = fallbackTexts.get(fonts)
+        if (!ready) { ready = new Set(); fallbackTexts.set(fonts, ready) }
+        if (ready.size >= 256) ready.clear()
+        ready.add(key)
+      }
     })()
     loads.set(key, pending)
     void pending.then(

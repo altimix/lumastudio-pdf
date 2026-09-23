@@ -58,6 +58,15 @@ describe('editable PDF project', () => {
     expect(restored.annotations).not.toBe(project.annotations)
   })
 
+  it('retains imported seal identity while rejecting that marker on ordinary text', () => {
+    const project = example()
+    project.annotations[2].stampSource = true
+    expect(decodeProject(encodeProject(project)).annotations[2].stampSource).toBe(true)
+    const raw = rawExample()
+    raw.annotations[0].stampSource = true
+    expect(() => decodeRaw(raw)).toThrow('画像印鑑の種類が不正')
+  })
+
   it('encodes large buffers in chunks without corrupting base64 boundaries or typed-array subviews', () => {
     const backing = new Uint8Array(120_003)
     const original = backing.subarray(13, 110_014)

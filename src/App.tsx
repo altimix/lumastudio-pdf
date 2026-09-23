@@ -119,6 +119,11 @@ function readSaved<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+const STAMP_SIZE_KEY = "luma.stamp-size.v1";
+function readSavedStampSize(): number {
+  const value = readSaved<unknown>(STAMP_SIZE_KEY, 35);
+  return typeof value === "number" && Number.isFinite(value) && value >= 8 && value <= 1000 ? value : 35;
+}
 
 export default function App() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -157,7 +162,7 @@ export default function App() {
   const [stamp, setStamp] = useState<SavedStamp>(() =>
     readSaved("luma.stamp.v1", { name: "", shape: "circle" }),
   );
-  const [stampSize, setStampSize] = useState(35);
+  const [stampSize, setStampSize] = useState(readSavedStampSize);
   const [stampLibrary, setStampLibrary] = useState<SavedStamp[]>(() =>
     readSaved("luma.stamps.v1", []),
   );
@@ -206,6 +211,18 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const placementSettings = useRef({ fontSize, stampSize, strokeWidth });
   placementSettings.current = { fontSize, stampSize, strokeWidth };
+  const rememberStampSize = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    const next = Math.round(Math.max(8, Math.min(1000, value)) * 100) / 100;
+    placementSettings.current.stampSize = next;
+    setStampSize(next);
+    try {
+      localStorage.setItem(STAMP_SIZE_KEY, JSON.stringify(next));
+    } catch {
+      setError("次回起動用の印鑑サイズを保存できませんでした。");
+    }
+  };
+  const isSeal = (annotation: Annotation) => annotation.type === "stamp" || (annotation.type === "image" && annotation.stampSource === true);
   const stateKey = JSON.stringify(edits);
   const dirty =
     !!pdf && (stateKey !== savedState || textEditing || numericEditing);
@@ -423,6 +440,8 @@ export default function App() {
           a.id === source.id ? updated : a,
         ),
       });
+      if (isSeal(source) && ("width" in change || "height" in change))
+        rememberStampSize(Math.max(updated.width, updated.height));
     };
     if (next.type !== "text" || isTextFontReady(next)) apply();
     else {
@@ -1216,6 +1235,7 @@ export default function App() {
         : {}),
       color: tool === "stamp" ? "#bb373c" : color,
       stampShape: stamp.shape,
+      ...(tool === "stamp" && stamp.dataUrl ? { stampSource: true as const } : {}),
       dataUrl:
         tool === "stamp"
           ? stamp.dataUrl
@@ -1444,6 +1464,7 @@ export default function App() {
           ? { fontFamily, fontWeight, fontStyle, underline }
           : {}),
         stampShape: stamp.shape,
+        ...(p.type === "stamp" && stamp.dataUrl ? { stampSource: true as const } : {}),
         dataUrl: p.type === "stamp" ? stamp.dataUrl : undefined,
       }));
     currentRef.current.busy = "文字の書式を準備しています";
@@ -1911,14 +1932,17 @@ export default function App() {
                   onTextDraftConsumed={() => setTextDraft(null)}
                   onTextEditingChange={setTextEditing}
                   onCommitText={applyText}
-                  onResize={(id, patch) =>
+                  onResize={(id, patch) => {
+                    const source = editsRef.current.annotations.find((a) => a.id === id);
                     commit({
                       ...editsRef.current,
                       annotations: editsRef.current.annotations.map((a) =>
                         a.id === id ? { ...a, ...patch } : a,
                       ),
-                    })
-                  }
+                    });
+                    if (source && isSeal(source))
+                      rememberStampSize(Math.max(patch.width ?? source.width, patch.height ?? source.height));
+                  }}
                   onPlace={place}
                   onSelect={(id) => {
                     flushInlineText();
@@ -2357,12 +2381,9 @@ export default function App() {
                     <NumericField
                       aria-label="印鑑の大きさ"
                       min={8}
-                      max={200}
+                      max={1000}
                       value={stampSize}
-                      onChange={(value) => {
-                        placementSettings.current.stampSize = value;
-                        setStampSize(value);
-                      }}
+                      onChange={rememberStampSize}
                       suffix="pt"
                       disabled={!!busy}
                     />

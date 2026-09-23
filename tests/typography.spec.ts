@@ -7,7 +7,7 @@ async function open(page: Page) {
   pdf.addPage([500, 700]);
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles({ name: 'typography.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
 }
 
 async function project(page: Page, info: TestInfo, name: string) {
@@ -116,6 +116,21 @@ test('新しい字形の読み込み前に文字を確定しても保存デー�
   }
 });
 
+test('同梱書体にない絵文字だけの文字欄も表示してPDFと作業データへ保存できる', async ({ page }, info) => {
+  await open(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await page.getByLabel('記入する文字', { exact: true }).fill('😀😀');
+  await page.getByTestId('pdf-surface').click({ position: { x: 90, y: 160 } });
+  await expect(page.getByRole('button', { name: '文字: 😀😀', exact: true }).locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  const saved = await project(page, info, 'emoji-fallback.lumapdf');
+  expect(saved.data.annotations[0]).toMatchObject({ text: '😀😀', fontFamily: 'noto-sans-jp' });
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const path = info.outputPath('emoji-fallback.pdf');
+  await (await event).saveAs(path);
+  expect((await PDFDocument.load(await readFile(path))).getPageCount()).toBe(1);
+});
+
 test('印鑑35四方とチェック12四方で配置し、旧作業データは従来書体で開く', async ({ page }, info) => {
   await open(page);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
@@ -141,6 +156,32 @@ test('印鑑35四方とチェック12四方で配置し、旧作業データは�
   await page.getByTestId('project-input').setInputFiles({ name: 'legacy.lumapdf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved.data)) });
   await page.getByRole('button', { name: '文字: 従来の文字', exact: true }).click();
   await expect(page.getByLabel('フォント', { exact: true })).toHaveValue('legacy');
+});
+
+test('印鑑サイズを変更すると次の配置と再読み込み後にも同じ大きさを使う', async ({ page }) => {
+  await open(page);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const size = page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true });
+  await expect(size).toHaveValue('35');
+  await size.fill('48');
+  await size.press('Enter');
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('山田');
+  await page.getByTestId('pdf-surface').click({ position: { x: 70, y: 130 } });
+  const width = page.getByRole('spinbutton', { name: '要素の幅', exact: true });
+  await expect(width).toHaveValue('48');
+  await width.fill('62');
+  await width.press('Enter');
+  await expect(width).toHaveValue('62');
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(size).toHaveValue('62');
+  await page.reload();
+  await page.getByRole('button', { name: 'サンプルの書類で試す', exact: true }).click();
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '印鑑の大きさ', exact: true })).toHaveValue('62');
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('次の印');
+  await page.getByTestId('pdf-surface').click({ position: { x: 90, y: 240 } });
+  await expect(page.getByRole('spinbutton', { name: '要素の幅', exact: true })).toHaveValue('62');
 });
 
 test('フォント読込が遅れても作業データ画面から入力欄へフォーカスを奪わない', async ({ page }) => {

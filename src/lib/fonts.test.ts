@@ -81,6 +81,21 @@ describe('bundled text fonts', () => {
     expect(isTextFontReady({ fontFamily: 'noto-sans-jp', text: '請求書' })).toBe(false)
   })
 
+  it('allows system fallback when the bundled face has no glyph for the text', async () => {
+    const face = { family: 'Noto Sans JP Variable', status: 'unloaded' }
+    const fonts = {
+      forEach: (visit: (face: unknown) => void) => visit(face),
+      check: () => true,
+      load: vi.fn(async () => []),
+    }
+    vi.stubGlobal('document', { fonts })
+    const emoji = { fontFamily: 'noto-sans-jp' as const, text: '😀' }
+    expect(isTextFontReady(emoji)).toBe(false)
+    await expect(ensureTextFont(emoji)).resolves.toBeUndefined()
+    expect(fonts.load).toHaveBeenCalledTimes(1)
+    expect(isTextFontReady(emoji)).toBe(true)
+  })
+
   it('fails clearly if the stylesheet or loading API is unavailable', async () => {
     vi.stubGlobal('document', { fonts: { forEach() {} } })
     await expect(ensureTextFont({ fontFamily: 'noto-sans-jp' })).rejects.toThrow('同梱フォントが見つかりません')
