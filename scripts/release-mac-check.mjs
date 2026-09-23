@@ -11,6 +11,7 @@ const { version } = JSON.parse(await readFile(path.join(repo, 'package.json'), '
 const scratch = path.join(repo, 'tmp');
 await mkdir(scratch, { recursive: true });
 const expectedGuide = await readFile(path.join(repo, 'README-Mac.txt'), 'utf8');
+const expectedLicense = await readFile(path.join(repo, 'LICENSE'));
 const results = [];
 for (const arch of ['x64', 'arm64']) {
   const archive = path.join(repo, 'release', `LumaStudio-PDF-${version}-macos-${arch}.zip`);
@@ -21,6 +22,8 @@ for (const arch of ['x64', 'arm64']) {
     const bundle = path.join(temporary, 'LumaStudio PDF.app');
     assert.equal(await readFile(path.join(temporary, 'README-Mac.txt'), 'utf8'), expectedGuide);
     assert.equal(await readFile(path.join(bundle, 'Contents', 'Resources', 'README-Mac.txt'), 'utf8'), expectedGuide);
+    assert.ok((await readFile(path.join(temporary, 'LICENSE'))).equals(expectedLicense), 'Mac ZIPのGPL本文が一致しません。');
+    assert.ok((await readFile(path.join(bundle, 'Contents', 'Resources', 'LICENSE'))).equals(expectedLicense), 'Macアプリ内のGPL本文が一致しません。');
     assert.ok((await stat(path.join(bundle, 'Contents', '_CodeSignature', 'CodeResources'))).size > 0);
     const verifyArgs = ['--verify', '--deep', '--strict', bundle];
     execFileSync('/usr/bin/codesign', verifyArgs, { stdio: 'inherit' });
@@ -29,13 +32,28 @@ for (const arch of ['x64', 'arm64']) {
     const changed = spawnSync('/usr/bin/codesign', verifyArgs, { encoding: 'utf8' });
     if (changed.error) throw changed.error;
     assert.ok(Number.isInteger(changed.status) && changed.status !== 0, '改変した配布アプリが整合性検証を通過しました。');
-    results.push({ arch, archive: path.basename(archive), signatureVerified: true, changedResourceRejected: true, installGuideIncluded: true, notarized: false, gatekeeperApprovalTested: false });
   } finally {
     // temporary is generated beneath our own scratch folder; never delete a supplied bundle path.
     assert.equal(path.dirname(path.resolve(temporary)), scratch);
     await rm(temporary, { recursive: true, force: true });
   }
+  const diskImage = path.join(repo, 'release', `LumaStudio-PDF-${version}-macos-${arch}.dmg`);
+  const mountPoint = await mkdtemp(path.join(scratch, `mac-dmg-${arch}-`));
+  assert.equal(path.dirname(mountPoint), scratch);
+  let mounted = false;
+  try {
+    execFileSync('/usr/bin/hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mountPoint, diskImage], { stdio: 'inherit' });
+    mounted = true;
+    assert.ok((await readFile(path.join(mountPoint, 'LICENSE'))).equals(expectedLicense), 'Mac DMGのGPL本文が一致しません。');
+    assert.ok((await readFile(path.join(mountPoint, 'LumaStudio PDF.app', 'Contents', 'Resources', 'LICENSE'))).equals(expectedLicense), 'Mac DMG内アプリのGPL本文が一致しません。');
+  } finally {
+    if (mounted) execFileSync('/usr/bin/hdiutil', ['detach', mountPoint], { stdio: 'inherit' });
+    assert.equal(path.dirname(path.resolve(mountPoint)), scratch);
+    await rm(mountPoint, { recursive: true, force: true });
+  }
+  results.push({ arch, archive: path.basename(archive), signatureVerified: true, changedResourceRejected: true, installGuideIncluded: true, gplLicenseIncluded: true, dmgLicenseIncluded: true, notarized: false, gatekeeperApprovalTested: false });
 }
 await copyFile(path.join(repo, 'README-Mac.txt'), path.join(repo, 'release', 'README-Mac.txt'));
+await copyFile(path.join(repo, 'LICENSE'), path.join(repo, 'release', 'LICENSE.txt'));
 await writeFile(path.join(scratch, 'release-mac-archives.json'), JSON.stringify(results, null, 2));
 console.log(JSON.stringify({ verifiedMacArchives: results }));

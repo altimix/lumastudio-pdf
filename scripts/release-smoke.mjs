@@ -8,19 +8,23 @@ import { expect } from '@playwright/test';
 import { extractFile } from '@electron/asar';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const output = process.argv[2] ? path.resolve(process.argv[2]) : path.join(repo, 'release');
 assert.ok(['win32', 'darwin'].includes(process.platform), 'Run packaged smoke on Windows or macOS.');
 if (process.platform === 'darwin') {
   for (const directory of ['mac', 'mac-arm64']) {
-    execFileSync('codesign', ['--verify', '--deep', '--strict', path.join(repo, 'release', directory, 'LumaStudio PDF.app')], { stdio: 'inherit' });
+    execFileSync('codesign', ['--verify', '--deep', '--strict', path.join(output, directory, 'LumaStudio PDF.app')], { stdio: 'inherit' });
   }
 }
 const executable = process.platform === 'win32'
-  ? path.join(repo, 'release', 'win-unpacked', 'LumaStudio PDF.exe')
-  : path.join(repo, 'release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'LumaStudio PDF.app', 'Contents', 'MacOS', 'LumaStudio PDF');
+  ? path.join(output, 'win-unpacked', 'LumaStudio PDF.exe')
+  : path.join(output, process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'LumaStudio PDF.app', 'Contents', 'MacOS', 'LumaStudio PDF');
 await fs.access(executable);
 const archive = process.platform === 'win32'
   ? path.join(path.dirname(executable), 'resources', 'app.asar')
   : path.join(path.dirname(executable), '..', 'Resources', 'app.asar');
+const bundledLicense = path.join(path.dirname(archive), 'LICENSE');
+assert.ok((await fs.readFile(bundledLicense)).equals(await fs.readFile(path.join(repo, 'LICENSE'))),
+  '配布アプリ内のGPLライセンス本文が不足または変更されています。');
 // Reject stale builds before starting Electron or its print-inbox watcher.
 for (const source of ['electron/main.cjs', 'electron/preload.cjs', 'electron/inbox-path.cjs', 'server/settings.cjs', 'dist/index.html']) {
   const current = await fs.readFile(path.join(repo, source));

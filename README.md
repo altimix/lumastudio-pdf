@@ -6,7 +6,7 @@
 
 ## ライセンスと公開範囲
 
-アプリと公式サイトのソースコードは [GNU GPL v3.0 のみ](LICENSE)（SPDX: `GPL-3.0-only`）で公開しています。v0.3.0 のソースコードと配布物も同じ条件です。ソースの閲覧、改変、再配布はこのライセンスに従ってください。配布物に対応するソースは [GitHub のリリース](https://github.com/altimix/lumastudio-pdf/releases) の各タグから確認できます。
+アプリと公式サイトのソースコードは [GNU GPL v3.0 のみ](LICENSE)（SPDX: `GPL-3.0-only`）で公開しています。v0.3.1以降の配布アプリにはライセンス本文を同梱します。ソースの閲覧、改変、再配布はこのライセンスに従ってください。配布物に対応するソースは [GitHub のリリース](https://github.com/altimix/lumastudio-pdf/releases) の各タグから確認できます。
 
 開発者写真 `website/public/assets/ando2026.png` はソースコードのライセンスの対象外です。写真の利用条件と同梱フォントのライセンスは [素材のライセンス一覧](website/ASSET-LICENSES.md) を参照してください。利用者自身が取り込むPDF・印鑑・証明書・APIキーは、このリポジトリに含めません。
 

@@ -16,4 +16,4 @@ npm run deploy:check --prefix website
 
 `npm run deploy --prefix website` は `lumastudiopdf.altimix.jp` を公開更新します。実行前にアカウント、ドメイン、配布リンクを確認し、公開後はHTTPS表示・リンク・画像・モバイル画面を検証します。
 
-アプリ配布物は公開 [GitHub Release v0.3.0](https://github.com/altimix/lumastudio-pdf/releases/tag/v0.3.0) のファイルに直接リンクします。公開作業時は `VERIFY_DOWNLOADS=1` を設定してリンクを検査します。
+アプリ配布物は公開 [GitHub Release v0.3.1](https://github.com/altimix/lumastudio-pdf/releases/tag/v0.3.1) のファイルに直接リンクします。公開作業時は `VERIFY_DOWNLOADS=1` を設定してリンクを検査します。
