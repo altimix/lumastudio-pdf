@@ -6,6 +6,7 @@
 - 写真は見た目の画素を変えず、公開に不要なXMPメタデータだけを除去しています。
 - 写真は GPL の対象外です。再利用条件は [素材のライセンス一覧](ASSET-LICENSES.md) に記載します。
 - 文書のアップロード、アカウント作成、アクセス解析スクリプトは設けません。
+- CloudflareによるWeb Analyticsビーコンの自動挿入を避けるため、`public/_headers`でHTMLの`/`と`/privacy/`へ`Cache-Control: no-transform`を指定します。公開後は実際のHTMLとブラウザーの外部リクエストを確認します。
 - Cloudflare Workers Static AssetsのWorker名は `lumastudiopdf-official` です。既存の動画編集サイト `lumastudio-official` には触れません。
 
 ```sh
