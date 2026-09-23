@@ -74,6 +74,23 @@ test('ペン手書き・Shift直線・半透明マーカーをPDFと作業デー
   await page.screenshot({ path: info.outputPath('ink-exported.png'), fullPage: true });
 });
 
+test('細い直線の色と縦横比ロックを変えても配置と大きさが変わらない', async ({ page }) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: 'ペン', exact: true }).click();
+  await dragOnPage(page, [80, 120], [240, 120], true);
+  await page.getByRole('button', { name: '選択・移動', exact: true }).click();
+  const line = page.getByRole('button', { name: /^ペン:/ });
+  await line.click();
+  await expect(page.getByRole('spinbutton', { name: '要素の高さ' })).toHaveValue('8');
+  const before = await line.boundingBox();
+  if (!before) throw new Error('直線が表示されていません');
+  await page.getByRole('button', { name: '縦横比をロック' }).click();
+  await page.locator('.color-field input[type="color"]').fill('#123456');
+  const after = await line.boundingBox();
+  if (!after) throw new Error('変更後の直線が表示されていません');
+  for (const key of ['x', 'y', 'width', 'height'] as const) expect(after[key]).toBeCloseTo(before[key], 1);
+});
+
 test('消しゴムは描いた線だけを消し、一操作のUndoと作業データ再開で復元できる', async ({ page }, info) => {
   await openFixture(page);
   await page.getByRole('button', { name: 'チェック', exact: true }).click();

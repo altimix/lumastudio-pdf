@@ -23,6 +23,24 @@ describe('editable pen and marker paths', () => {
     expect(inkHitTest(marker, { x: 350, y: 250 })).toBe(false)
   })
 
+  it('keeps thin and edge strokes stable when the editor applies its 8pt minimum', () => {
+    for (const points of [
+      [{ x: 50, y: 100 }, { x: 250, y: 100 }],
+      [{ x: 100, y: 50 }, { x: 100, y: 250 }],
+      [{ x: 0, y: 0 }],
+    ]) {
+      const stroke = createInkAnnotation('thin', page, 'pen', points, '#000000', 2)
+      expect(stroke.width).toBeGreaterThanOrEqual(8)
+      expect(stroke.height).toBeGreaterThanOrEqual(8)
+      expect(stroke.x + stroke.width).toBeLessThanOrEqual(page.width)
+      expect(stroke.y + stroke.height).toBeLessThanOrEqual(page.height)
+      points.forEach((point, index) => {
+        expect(stroke.x + stroke.points![index].x * stroke.width).toBeCloseTo(point.x)
+        expect(stroke.y + stroke.points![index].y * stroke.height).toBeCloseTo(point.y)
+      })
+    }
+  })
+
   it('erases a stroke crossed between two distant pointer events', () => {
     const line = createInkAnnotation('line', page, 'pen', [{ x: 50, y: 100 }, { x: 250, y: 100 }], '#000000', 2)
     expect(inkHitTest(line, { x: 150, y: 50 })).toBe(false)

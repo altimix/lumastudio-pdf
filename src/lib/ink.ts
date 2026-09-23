@@ -22,12 +22,16 @@ export function createInkAnnotation(
     y: Math.min(page.height, Math.max(0, point.y)),
   }))
   const margin = strokeWidth / 2 + 2
-  const x = Math.max(0, Math.min(...clamped.map(point => point.x)) - margin)
-  const y = Math.max(0, Math.min(...clamped.map(point => point.y)) - margin)
+  const left = Math.max(0, Math.min(...clamped.map(point => point.x)) - margin)
+  const top = Math.max(0, Math.min(...clamped.map(point => point.y)) - margin)
   const right = Math.min(page.width, Math.max(...clamped.map(point => point.x)) + margin)
   const bottom = Math.min(page.height, Math.max(...clamped.map(point => point.y)) + margin)
-  const width = Math.max(Number.MIN_VALUE, right - x)
-  const height = Math.max(Number.MIN_VALUE, bottom - y)
+  // The editor's resize fields have an 8pt minimum. Expand a thin horizontal,
+  // vertical, or single-point stroke here so later style edits keep its shape.
+  const width = Math.min(page.width, Math.max(8, right - left))
+  const height = Math.min(page.height, Math.max(8, bottom - top))
+  const x = Math.max(0, Math.min(page.width - width, (left + right - width) / 2))
+  const y = Math.max(0, Math.min(page.height - height, (top + bottom - height) / 2))
   return {
     id, pageId: page.id, type: kind, x, y, width, height,
     color, strokeWidth, aspectLocked: false,
