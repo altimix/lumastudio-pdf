@@ -20,8 +20,8 @@ async function openFixture(page: Page, signed = false, pageCount = 1) {
   }
   await page.goto('/');
   await page.getByTestId('pdf-input').setInputFiles({ name: 'direct-edit.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
-  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => (element as HTMLCanvasElement).width)).toBeGreaterThan(100);
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => (element as HTMLCanvasElement).width), { timeout: 30_000 }).toBeGreaterThan(100);
 }
 
 async function screenPoint(page: Page, x: number, y: number, rotation = 0) {

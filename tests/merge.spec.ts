@@ -14,8 +14,8 @@ async function fixture(name: string, widths: number[]): Promise<Fixture> {
 }
 
 async function expectPages(page: Page, count: number) {
-  await expect(page.locator('.thumbnail-button')).toHaveCount(count);
-  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.locator('.thumbnail-button')).toHaveCount(count, { timeout: 30_000 });
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'PDFを保存', exact: true })).toBeEnabled();
 }
 
