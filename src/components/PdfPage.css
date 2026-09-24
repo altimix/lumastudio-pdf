@@ -9,6 +9,7 @@
 .pdf-surface.panning .annotation:active {
   cursor: grabbing;
 }
+.annotation { z-index: 2; }
 .annotation.editing {
   visibility: hidden;
 }
@@ -197,7 +198,8 @@
     display: none;
   }
 }
-.ink-input-layer {
+.ink-input-layer,
+.shape-input-layer {
   position: absolute;
   inset: 0;
   z-index: 30;
@@ -205,6 +207,12 @@
   touch-action: none;
 }
 .ink-input-layer.eraser { cursor: cell; }
+.shape-input-layer { z-index: 1; }
+.shape-placement-preview {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
 .ink-input-layer svg {
   display: block;
   width: 100%;

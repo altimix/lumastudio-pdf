@@ -18,6 +18,7 @@ describe('editable pen and marker paths', () => {
 
   it('detects a highlighter dot but never erases ordinary PDF materials', () => {
     const marker = createInkAnnotation('dot', page, 'marker', [{ x: 300, y: 250 }], '#ffe14a', 18)
+    expect(marker.markerCap).toBe('square')
     expect(inkHitTest(marker, { x: 300, y: 250 })).toBe(true)
     expect(inkHitTest({ ...marker, type: 'text' }, { x: 300, y: 250 })).toBe(false)
     expect(inkHitTest(marker, { x: 350, y: 250 })).toBe(false)

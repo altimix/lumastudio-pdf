@@ -3,6 +3,7 @@ import type { PDFObject } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { Annotation, PageInfo } from './types'
+import { shapeLineSegments } from './shape-placement'
 import { ensureTextFont, fontCssFamily, resolveTextGeometry, textFontCss, underlineOffset, wrapTextLines } from './fonts'
 
 export type { Annotation, PageInfo } from './types'
@@ -215,11 +216,13 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
     context.fillStyle = color
     context.globalAlpha = annotation.type === 'marker' ? 0.35 : 1
     context.lineWidth = annotation.strokeWidth ?? (annotation.type === 'marker' ? 18 : 2)
-    context.lineCap = 'round'
-    context.lineJoin = 'round'
+    const squareTip = annotation.type === 'marker' && annotation.markerCap === 'square'
+    context.lineCap = squareTip ? 'square' : 'round'
+    context.lineJoin = squareTip ? 'miter' : 'round'
     if (points.length === 1) {
       context.beginPath()
-      context.arc(points[0].x * width, points[0].y * height, context.lineWidth / 2, 0, Math.PI * 2)
+      if (squareTip) context.rect(points[0].x * width - context.lineWidth / 2, points[0].y * height - context.lineWidth / 2, context.lineWidth, context.lineWidth)
+      else context.arc(points[0].x * width, points[0].y * height, context.lineWidth / 2, 0, Math.PI * 2)
       context.fill()
     } else {
       context.beginPath()
@@ -236,13 +239,9 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
     const inset = strokeWidth / 2
     context.beginPath()
     if (lineShape) {
-      const offset = annotation.shapeKind === 'double-line'
-        ? Math.min(height / 4, Math.max(strokeWidth, height * 0.14)) : 0
-      context.moveTo(inset, height / 2 - offset)
-      context.lineTo(width - inset, height / 2 - offset)
-      if (annotation.shapeKind === 'double-line') {
-        context.moveTo(inset, height / 2 + offset)
-        context.lineTo(width - inset, height / 2 + offset)
+      for (const segment of shapeLineSegments(annotation.shapeKind as 'line' | 'double-line', width, height, strokeWidth, annotation.lineDirection)) {
+        context.moveTo(segment.x1, segment.y1)
+        context.lineTo(segment.x2, segment.y2)
       }
     } else if (annotation.shapeKind === 'ellipse') {
       context.ellipse(width / 2, height / 2, Math.max(0, width / 2 - inset), Math.max(0, height / 2 - inset), 0, 0, Math.PI * 2)

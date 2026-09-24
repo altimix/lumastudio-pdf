@@ -101,6 +101,28 @@ describe('material rendering for preview and PDF export', () => {
     expect(marker.lineWidth).toBe(18)
   })
 
+  it('renders square highlighter tips for lines and dots without changing old round strokes', async () => {
+    const square = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', markerCap: 'square', strokeWidth: 18, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
+    expect(square.lineCap).toBe('square')
+    expect(square.lineJoin).toBe('miter')
+    const dot = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', markerCap: 'square', strokeWidth: 18, points: [{ x: 0.5, y: 0.5 }] })
+    expect(dot.rect).toHaveBeenCalledWith(31, 11, 18, 18)
+    expect(dot.arc).not.toHaveBeenCalled()
+    const legacy = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', strokeWidth: 18, points: [{ x: 0.5, y: 0.5 }] })
+    expect(legacy.lineCap).toBe('round')
+    expect(legacy.arc).toHaveBeenCalledOnce()
+  })
+
+  it('renders a dragged diagonal line across its saved box', async () => {
+    const { context } = drawingContext()
+    await annotationToDataUrl({ ...base, shapeKind: 'line', lineDirection: 'up', strokeWidth: 2 })
+    expect(context.moveTo).toHaveBeenCalledWith(1, 39)
+    expect(context.lineTo).toHaveBeenCalledWith(79, 1)
+  })
+
   it('does not replace a zero outline width with its default', async () => {
     const { context } = drawingContext()
     await annotationToDataUrl({ ...base, strokeWidth: 0, fillColor: '#ffffff' })

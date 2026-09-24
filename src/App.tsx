@@ -59,6 +59,7 @@ import {
 import type {
   Annotation,
   FontFamilyId,
+  MarkerCap,
   PageInfo,
   ShapeKind,
   Tool,
@@ -72,6 +73,7 @@ import {
   resolveTextGeometry,
 } from "./lib/fonts";
 import { createInkAnnotation, type InkKind, type InkPoint } from "./lib/ink";
+import type { ShapePlacement } from "./lib/shape-placement";
 import { NumericField } from "./components/NumericField";
 import {
   TextStyleFields,
@@ -168,6 +170,7 @@ export default function App() {
   const [penWidth, setPenWidth] = useState(2);
   const [markerColor, setMarkerColor] = useState("#ffe14a");
   const [markerWidth, setMarkerWidth] = useState(18);
+  const [markerCap, setMarkerCap] = useState<MarkerCap>("square");
   const [numericEditing, setNumericEditing] = useState(false);
   const [numericPreview, setNumericPreview] = useState<Annotation | null>(null);
   const numericPreviewRef = useRef<Annotation | null>(null);
@@ -482,6 +485,8 @@ export default function App() {
     sheet: PageInfo,
   ) => {
     const updated = { ...source, ...change };
+    if (updated.type === "shape" && change.shapeKind && change.shapeKind !== "line" && change.shapeKind !== "double-line")
+      updated.lineDirection = undefined;
     if (isAspectLocked(source) && ("width" in change || "height" in change)) {
       const paddingWidth = source.type === "text" && source.width > 4 ? 4 : 0;
       const paddingHeight = source.type === "text" && source.height > 6 ? 6 : 0;
@@ -1344,7 +1349,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   });
 
-  const place = async (x: number, y: number) => {
+  const place = async (x: number, y: number, shapePlacement?: ShapePlacement) => {
     if (
       !page ||
       tool === "select" ||
@@ -1414,6 +1419,10 @@ export default function App() {
       if (stamp.aspectRatio < 1) width *= stamp.aspectRatio;
       else height /= stamp.aspectRatio;
     }
+    if (tool === "shape" && shapePlacement) {
+      width = shapePlacement.width;
+      height = shapePlacement.height;
+    }
     if (tool === "stamp") {
       const fit = Math.min(1, page.width / width, page.height / height);
       width *= fit;
@@ -1429,8 +1438,8 @@ export default function App() {
       id: crypto.randomUUID(),
       pageId: page.id,
       type: tool === "stamp" && stamp.dataUrl ? "image" : tool,
-      x: Math.max(0, Math.min(page.width - width, x - (centerX ? width / 2 : 0))),
-      y: Math.max(0, Math.min(page.height - height, y - (centerY ? height / 2 : 0))),
+      x: tool === "shape" && shapePlacement ? shapePlacement.x : Math.max(0, Math.min(page.width - width, x - (centerX ? width / 2 : 0))),
+      y: tool === "shape" && shapePlacement ? shapePlacement.y : Math.max(0, Math.min(page.height - height, y - (centerY ? height / 2 : 0))),
       width,
       height,
       aspectLocked: tool !== "shape",
@@ -1440,7 +1449,7 @@ export default function App() {
         ? { fontFamily, fontWeight, fontStyle, underline }
         : {}),
       ...(tool === "shape"
-        ? { shapeKind, strokeColor: lineShape && strokeColor === "none" ? "#000000" : strokeColor,
+        ? { shapeKind, ...(shapePlacement?.lineDirection ? { lineDirection: shapePlacement.lineDirection } : {}), strokeColor: lineShape && strokeColor === "none" ? "#000000" : strokeColor,
           fillColor: lineShape ? "none" : fillColor, strokeWidth: lineShape ? Math.max(0.5, strokeWidth) : strokeWidth }
         : {}),
       color: tool === "stamp" ? "#bb373c" : color,
@@ -1498,6 +1507,7 @@ export default function App() {
         crypto.randomUUID(), page, kind, points,
         kind === "marker" ? markerColor : penColor,
         kind === "marker" ? markerWidth : penWidth,
+        markerCap,
       );
       commit({ ...editsRef.current, annotations: [...editsRef.current.annotations, annotation] });
       setSelectedId(null);
@@ -2227,6 +2237,8 @@ export default function App() {
                       ? "ドラッグで移動・2本指で拡大縮小"
                       : tool === "pen" || tool === "marker"
                         ? "ドラッグで手書き・Shiftを押しながら引くと直線"
+                        : tool === "shape"
+                          ? "ドラッグで大きさを決めて配置・クリックで従来サイズ"
                         : tool === "eraser"
                           ? "追加したペン・蛍光ペンの線をクリックまたはドラッグして消去"
                       : tool === "select"
@@ -2291,6 +2303,8 @@ export default function App() {
                   inkTool={tool === "pen" || tool === "marker" || tool === "eraser" ? tool : null}
                   inkColor={tool === "marker" ? markerColor : penColor}
                   inkWidth={tool === "marker" ? markerWidth : penWidth}
+                  markerCap={markerCap}
+                  shapeStyle={tool === "shape" ? { shapeKind, strokeColor, fillColor, strokeWidth } : null}
                   readOnly={signedInput || !!busy}
                   panning={viewport.panning || tool === "hand"}
                   isGesturePointer={viewport.isGesturePointer}
@@ -2419,6 +2433,20 @@ export default function App() {
                       onEditingChange={setNumericEditing}
                       disabled={!!busy || signedInput}
                     />
+                  )}
+                  {selected.type === "marker" && (
+                    <label>
+                      蛍光ペンの端
+                      <select
+                        aria-label="蛍光ペンの端"
+                        value={selected.markerCap ?? "round"}
+                        disabled={!!busy || signedInput}
+                        onChange={(event) => updateSelected({ markerCap: event.target.value as MarkerCap })}
+                      >
+                        <option value="round">丸</option>
+                        <option value="square">角</option>
+                      </select>
+                    </label>
                   )}
                   {selected.type === "text" && (
                     <label>
@@ -2572,6 +2600,15 @@ export default function App() {
                       onChange={(value) => tool === "marker" ? setMarkerWidth(value) : setPenWidth(value)}
                     />
                   </label>
+                  {tool === "marker" && (
+                    <label>
+                      蛍光ペンの端
+                      <select aria-label="蛍光ペンの端" value={markerCap} onChange={(event) => setMarkerCap(event.target.value as MarkerCap)}>
+                        <option value="round">丸</option>
+                        <option value="square">角</option>
+                      </select>
+                    </label>
+                  )}
                   <p className="help-text">用紙をドラッグして描きます。Shiftキーを押したまま引くと直線になります。完成後も移動・サイズ変更ができます。</p>
                 </>
               ) : tool === "eraser" ? (
@@ -2612,7 +2649,7 @@ export default function App() {
                     />
                   </div>
                   <p className="help-text">
-                    用紙をクリックして配置します。選択した図形の辺・角をドラッグすると、長方形や楕円など自由な縦横比に変えられます。
+                    用紙をドラッグすると、その大きさで配置できます。クリックだけなら従来の大きさで配置します。配置後も辺・角をドラッグして変更できます。
                   </p>
                 </>
               ) : tool === "text" ? (

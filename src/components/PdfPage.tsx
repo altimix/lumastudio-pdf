@@ -8,7 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import type { Annotation, PageInfo } from "../lib/types";
+import type { Annotation, MarkerCap, PageInfo, ShapeKind } from "../lib/types";
 import { annotationToDataUrl, renderPdfPage } from "../lib/pdf";
 import {
   ensureTextFont,
@@ -23,6 +23,7 @@ import {
   type ResizeHandle,
 } from "../lib/annotation-geometry";
 import { inkStrokeIntersectsSegment, MAX_INK_POINTS, type InkKind, type InkPoint } from "../lib/ink";
+import { shapeLineSegments, shapePlacementFromDrag, type ShapePlacement } from "../lib/shape-placement";
 import "./PdfPage.css";
 
 export function AnnotationVisual({
@@ -120,6 +121,8 @@ type Props = {
   inkTool: InkKind | 'eraser' | null;
   inkColor: string;
   inkWidth: number;
+  markerCap: MarkerCap;
+  shapeStyle: Pick<Annotation, 'shapeKind' | 'strokeColor' | 'fillColor' | 'strokeWidth'> & { shapeKind: ShapeKind } | null;
   readOnly: boolean;
   panning: boolean;
   isGesturePointer(pointerId: number): boolean;
@@ -128,7 +131,7 @@ type Props = {
   onTextEditingChange(active: boolean): void;
   onCommitText(annotation: Annotation): void;
   onResize(id: string, patch: Partial<Annotation>): void;
-  onPlace(x: number, y: number): void;
+  onPlace(x: number, y: number, shapePlacement?: ShapePlacement): void;
   onDrawInk(kind: InkKind, points: InkPoint[]): void;
   onEraseInk(ids: string[]): void;
   onSelect(id: string | null): void;
@@ -207,6 +210,8 @@ export function PdfPage({
   inkTool,
   inkColor,
   inkWidth,
+  markerCap,
+  shapeStyle,
   readOnly,
   panning,
   isGesturePointer,
@@ -231,6 +236,8 @@ export function PdfPage({
   const interaction = useRef<Interaction | null>(null);
   const inkGesture = useRef<InkGesture | null>(null);
   const [inkPreview, setInkPreview] = useState<InkPoint[] | null>(null);
+  const shapeGesture = useRef<{ pointerId: number; start: InkPoint; clientX: number; clientY: number } | null>(null);
+  const [shapePreview, setShapePreview] = useState<ShapePlacement | null>(null);
   const [eraserPoint, setEraserPoint] = useState<InkPoint | null>(null);
   const [pendingEraseIds, setPendingEraseIds] = useState<Set<string>>(() => new Set());
   const previewRef = useRef<Annotation | null>(null);
@@ -265,6 +272,10 @@ export function PdfPage({
     setInkPreview(null);
     setEraserPoint(null);
     setPendingEraseIds(new Set());
+  };
+  const clearShapeGesture = () => {
+    shapeGesture.current = null;
+    setShapePreview(null);
   };
   const takeDraft = (): Annotation | null => {
     const pending = draftRef.current;
@@ -431,11 +442,15 @@ export function PdfPage({
       } else if (event.key === "Escape" && inkGesture.current) {
         clearInkGesture();
         event.preventDefault();
+      } else if (event.key === "Escape" && shapeGesture.current) {
+        clearShapeGesture();
+        event.preventDefault();
       }
     };
     const blur = () => {
       clearInteraction();
       clearInkGesture();
+      clearShapeGesture();
       touchPlace.current = null;
     };
     window.addEventListener("keydown", cancel, true);
@@ -501,6 +516,24 @@ export function PdfPage({
     }
     clearInkGesture();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const moveShape = (event: PointerEvent<HTMLDivElement>) => {
+    const gesture = shapeGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId || !shapeStyle) return;
+    if (readOnly || panning || isGesturePointer(event.pointerId)) { clearShapeGesture(); return; }
+    const distance = Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY);
+    setShapePreview(distance >= 5 ? shapePlacementFromDrag(gesture.start, toInkPoint(event.clientX, event.clientY), page, shapeStyle.shapeKind) : null);
+  };
+  const finishShape = (event: PointerEvent<HTMLDivElement>) => {
+    const gesture = shapeGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const valid = !readOnly && !panning && !isGesturePointer(event.pointerId);
+    const distance = Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY);
+    const placement = valid && shapeStyle && distance >= 5
+      ? shapePlacementFromDrag(gesture.start, toInkPoint(event.clientX, event.clientY), page, shapeStyle.shapeKind) : undefined;
+    clearShapeGesture();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (valid) onPlace(gesture.start.x, gesture.start.y, placement);
   };
   const beginTextEdit = (annotation: Annotation) => {
     if (readOnly || panning || annotation.type !== "text") return;
@@ -902,6 +935,52 @@ export function PdfPage({
             </div>
           </div>
         )}
+        {shapeStyle && !readOnly && !panning && (
+          <div
+            className="shape-input-layer"
+            data-testid="shape-input-layer"
+            onPointerDown={(event) => {
+              if (event.button !== 0 || isGesturePointer(event.pointerId)) return;
+              if (shapeGesture.current) { clearShapeGesture(); return; }
+              event.preventDefault();
+              event.stopPropagation();
+              commitDraft();
+              const start = toInkPoint(event.clientX, event.clientY);
+              shapeGesture.current = { pointerId: event.pointerId, start, clientX: event.clientX, clientY: event.clientY };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => { event.stopPropagation(); moveShape(event); }}
+            onPointerUp={(event) => { event.stopPropagation(); finishShape(event); }}
+            onPointerCancel={(event) => { event.stopPropagation(); clearShapeGesture(); }}
+            onLostPointerCapture={clearShapeGesture}
+          >
+            {shapePreview && (() => {
+              const { width, height } = shapePreview;
+              const lineShape = shapeStyle.shapeKind === 'line' || shapeStyle.shapeKind === 'double-line';
+              const strokeColor = lineShape && shapeStyle.strokeColor === 'none' ? '#000000' : shapeStyle.strokeColor ?? '#000000';
+              const strokeWidth = strokeColor === 'none' ? 0 : Math.min(Math.max(0, lineShape ? Math.max(0.5, shapeStyle.strokeWidth ?? 1.5) : shapeStyle.strokeWidth ?? 1.5), 20, width, height);
+              const inset = strokeWidth / 2;
+              return <svg
+                className="shape-placement-preview"
+                data-testid="shape-placement-preview"
+                style={{ left: shapePreview.x * scale, top: shapePreview.y * scale, width: width * scale, height: height * scale }}
+                viewBox={`0 0 ${width} ${height}`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <g fill={lineShape || shapeStyle.fillColor === 'none' ? 'none' : shapeStyle.fillColor ?? 'none'} stroke={strokeColor} strokeWidth={strokeWidth} strokeLinejoin="round">
+                  {lineShape ? shapeLineSegments(shapeStyle.shapeKind as 'line' | 'double-line', width, height, strokeWidth, shapePreview.lineDirection).map((segment, index) =>
+                    <line key={index} {...segment} />)
+                    : shapeStyle.shapeKind === 'ellipse'
+                      ? <ellipse cx={width / 2} cy={height / 2} rx={Math.max(0, width / 2 - inset)} ry={Math.max(0, height / 2 - inset)} />
+                      : shapeStyle.shapeKind === 'triangle'
+                        ? <polygon points={`${width / 2},${inset} ${width - inset},${height - inset} ${inset},${height - inset}`} />
+                        : <rect x={inset} y={inset} width={Math.max(0, width - inset * 2)} height={Math.max(0, height - inset * 2)} />}
+                </g>
+              </svg>;
+            })()}
+          </div>
+        )}
         {inkTool && !readOnly && !panning && (
           <div
             className={`ink-input-layer ${inkTool}`}
@@ -926,8 +1005,10 @@ export function PdfPage({
           >
             <svg viewBox={`0 0 ${page.width} ${page.height}`} preserveAspectRatio="none" aria-hidden="true">
               {inkPreview && (inkPreview.length === 1
-                ? <circle cx={inkPreview[0].x} cy={inkPreview[0].y} r={inkWidth / 2} fill={inkColor} opacity={inkTool === 'marker' ? 0.35 : 1} />
-                : <polyline points={inkPreview.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke={inkColor} strokeWidth={inkWidth} strokeLinecap="round" strokeLinejoin="round" opacity={inkTool === 'marker' ? 0.35 : 1} />)}
+                ? inkTool === 'marker' && markerCap === 'square'
+                  ? <rect x={inkPreview[0].x - inkWidth / 2} y={inkPreview[0].y - inkWidth / 2} width={inkWidth} height={inkWidth} fill={inkColor} opacity={0.35} />
+                  : <circle cx={inkPreview[0].x} cy={inkPreview[0].y} r={inkWidth / 2} fill={inkColor} opacity={inkTool === 'marker' ? 0.35 : 1} />
+                : <polyline points={inkPreview.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke={inkColor} strokeWidth={inkWidth} strokeLinecap={inkTool === 'marker' && markerCap === 'square' ? 'square' : 'round'} strokeLinejoin={inkTool === 'marker' && markerCap === 'square' ? 'miter' : 'round'} opacity={inkTool === 'marker' ? 0.35 : 1} />)}
               {inkTool === 'eraser' && eraserPoint && <circle cx={eraserPoint.x} cy={eraserPoint.y} r={8} fill="#ffffff55" stroke="#297c6c" strokeWidth={1.5} />}
             </svg>
           </div>

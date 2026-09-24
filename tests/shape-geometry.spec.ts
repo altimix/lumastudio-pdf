@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
 
 type Geometry = { x: number; y: number; width: number; height: number };
-type Shape = Geometry & { type: string; shapeKind: string; fillColor: string; strokeColor: string; strokeWidth: number };
+type Shape = Geometry & { type: string; shapeKind: string; fillColor: string; strokeColor: string; strokeWidth: number; lineDirection?: string };
 type Project = { annotations: Shape[]; pages: { rotation: number }[] };
 
 async function openFixture(page: Page) {
@@ -25,6 +25,22 @@ async function placeShape(page: Page, label: string, x: number, y: number) {
   await expect(annotation).toBeVisible();
   await expect(annotation.locator('img')).toHaveAttribute('src', /^data:image\/png/);
   return annotation;
+}
+
+async function dragShape(page: Page, label: string, from: [number, number], to: [number, number]) {
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByLabel('図形の種類', { exact: true }).selectOption({ label });
+  const surface = page.getByTestId('pdf-surface');
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('PDFが表示されていません');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await page.mouse.move(box.x + from[0] * scale, box.y + from[1] * scale);
+  await page.mouse.down();
+  await page.mouse.move(box.x + to[0] * scale, box.y + to[1] * scale, { steps: 6 });
+  await expect(page.getByTestId('shape-placement-preview')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.getByTestId('shape-placement-preview')).toHaveCount(0);
+  await expect(page.locator('.annotation.selected')).toBeVisible();
 }
 
 async function geometry(annotation: Locator): Promise<Geometry> {
@@ -243,4 +259,87 @@ test('図形は丸を初期選択し、線と二重線をクリック中心に�
       return color[0] < 100 && color[1] < 100 && color[2] < 100 ? 'black' : 'white';
     });
   })).toEqual(['black', 'black', 'white', 'black']);
+});
+
+test('5種類の図形をドラッグした大きさと方向で配置し、Undo・作業再開・PDF出力に残す', async ({ page }, info) => {
+  await openFixture(page);
+  await dragShape(page, '長方形', [40, 80], [170, 130]);
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByRole('button', { name: /^図形:/ }).first().click();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  await dragShape(page, '楕円・円', [320, 80], [220, 170]);
+  await dragShape(page, '三角形', [40, 220], [170, 290]);
+  await dragShape(page, '線', [320, 220], [210, 300]);
+  await dragShape(page, '二重線（取消線）', [40, 410], [170, 475]);
+  await expect(page.locator('.annotation')).toHaveCount(5);
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.locator('.annotation')).toHaveCount(4);
+  await page.getByRole('button', { name: 'やり直す', exact: true }).click();
+  const saved = await saveProject(page, info, 'dragged-shapes.lumapdf');
+  expect(saved.data.annotations.map(shape => [shape.shapeKind, shape.x, shape.y, shape.width, shape.height, shape.lineDirection])).toEqual([
+    ['rectangle', 40, 80, 130, 50, undefined],
+    ['ellipse', 220, 80, 100, 90, undefined],
+    ['triangle', 40, 220, 130, 70, undefined],
+    ['line', 210, 220, 110, 80, 'up'],
+    ['double-line', 40, 410, 130, 65, 'down'],
+  ]);
+  await openProject(page, saved.path);
+  await expect(page.locator('.annotation')).toHaveCount(5);
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const exported = info.outputPath('dragged-shapes.pdf');
+  await (await download).saveAs(exported);
+  await page.getByTestId('pdf-input').setInputFiles(exported);
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => {
+    const canvas = element as HTMLCanvasElement;
+    const pixel = canvas.getContext('2d')!.getImageData(Math.round(265 * canvas.width / 500), Math.round(260 * canvas.height / 700), 1, 1).data;
+    return pixel[0] < 150 && pixel[1] < 150 && pixel[2] < 150;
+  })).toBe(true);
+  await page.screenshot({ path: info.outputPath('dragged-shapes.png'), fullPage: true });
+  await openProject(page, saved.path);
+  await page.locator('.annotation').nth(3).click();
+  await page.getByLabel('図形の種類', { exact: true }).selectOption({ label: '楕円・円' });
+  const converted = await saveProject(page, info, 'converted-line.lumapdf');
+  expect(converted.data.annotations[3].shapeKind).toBe('ellipse');
+  expect(converted.data.annotations[3]).not.toHaveProperty('lineDirection');
+});
+
+test('回転した用紙で図形をドラッグでき、Escapeで取消し、一本指でも配置できる', async ({ page }, info) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: 'ページを右に回転', exact: true }).click();
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByLabel('図形の種類', { exact: true }).selectOption({ label: '線' });
+  const surface = page.getByTestId('pdf-surface');
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('PDFが表示されていません');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await page.mouse.move(box.x + 100 * scale, box.y + 100 * scale);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 220 * scale, box.y + 210 * scale, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByLabel('図形の種類', { exact: true }).selectOption({ label: '長方形' });
+  await page.mouse.move(box.x + 300 * scale, box.y + 120 * scale);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 380 * scale, box.y + 190 * scale, { steps: 6 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + 300 * scale, y: box.y + 120 * scale, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + 390 * scale, y: box.y + 200 * scale, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(page.locator('.annotation')).toHaveCount(2);
+  } finally {
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await session.detach();
+  }
+  const saved = await saveProject(page, info, 'rotated-dragged-shapes.lumapdf');
+  expect(saved.data.pages[0].rotation).toBe(90);
+  expect(saved.data.annotations[0]).toMatchObject({ shapeKind: 'line', lineDirection: 'up', x: 100, y: 480, width: 110, height: 120 });
+  expect(saved.data.annotations[1].shapeKind).toBe('rectangle');
 });

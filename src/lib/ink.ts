@@ -1,4 +1,4 @@
-import type { Annotation, PageInfo } from './types'
+import type { Annotation, MarkerCap, PageInfo } from './types'
 
 export type InkPoint = { x: number; y: number }
 export type InkKind = 'pen' | 'marker'
@@ -12,6 +12,7 @@ export function createInkAnnotation(
   points: InkPoint[],
   color: string,
   strokeWidth: number,
+  markerCap: MarkerCap = 'square',
 ): Annotation {
   if (!points.length || points.length > MAX_INK_POINTS || !Number.isFinite(strokeWidth) || strokeWidth < 1 || strokeWidth > 72) {
     throw new Error('線の点数または太さが不正です。')
@@ -35,6 +36,7 @@ export function createInkAnnotation(
   return {
     id, pageId: page.id, type: kind, x, y, width, height,
     color, strokeWidth, aspectLocked: false,
+    ...(kind === 'marker' ? { markerCap } : {}),
     points: clamped.map(point => ({ x: (point.x - x) / width, y: (point.y - y) / height })),
   }
 }
