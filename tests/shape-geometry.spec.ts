@@ -264,7 +264,7 @@ test('図形は丸を初期選択し、線と二重線をクリック中心に�
 test('5種類の図形をドラッグした大きさと方向で配置し、Undo・作業再開・PDF出力に残す', async ({ page }, info) => {
   await openFixture(page);
   await dragShape(page, '長方形', [40, 80], [170, 130]);
-  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByRole('button', { name: '選択・移動', exact: true }).click();
   await page.getByRole('button', { name: /^図形:/ }).first().click();
   await expect(page.locator('.annotation')).toHaveCount(1);
   await dragShape(page, '楕円・円', [320, 80], [220, 170]);
@@ -303,6 +303,31 @@ test('5種類の図形をドラッグした大きさと方向で配置し、Undo
   const converted = await saveProject(page, info, 'converted-line.lumapdf');
   expect(converted.data.annotations[3].shapeKind).toBe('ellipse');
   expect(converted.data.annotations[3]).not.toHaveProperty('lineDirection');
+});
+
+test('既存の図形に重ねてドラッグ・クリック配置し、選択ツールで元の図形を編集できる', async ({ page }, info) => {
+  await openFixture(page);
+  await dragShape(page, '長方形', [80, 120], [240, 240]);
+  const original = await geometry(page.locator('.annotation').first());
+  await dragShape(page, '楕円・円', [100, 150], [300, 280]);
+  await expect(page.locator('.annotation')).toHaveCount(2);
+  expect(await geometry(page.locator('.annotation').first())).toEqual(original);
+  await page.getByRole('button', { name: '図形', exact: true }).click();
+  await page.getByLabel('図形の種類', { exact: true }).selectOption({ label: '三角形' });
+  const surface = page.getByTestId('pdf-surface');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await surface.click({ position: { x: 125 * scale, y: 175 * scale } });
+  await expect(page.locator('.annotation')).toHaveCount(3);
+  const saved = await saveProject(page, info, 'overlapping-shapes.lumapdf');
+  expect(saved.data.annotations.map(shape => shape.shapeKind)).toEqual(['rectangle', 'ellipse', 'triangle']);
+  expect(saved.data.annotations[0]).toMatchObject({ x: 80, y: 120, width: 160, height: 120 });
+  expect(saved.data.annotations[1]).toMatchObject({ x: 100, y: 150, width: 200, height: 130 });
+  await page.getByRole('button', { name: '選択・移動', exact: true }).click();
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('PDFが表示されていません');
+  await page.mouse.click(box.x + 90 * scale, box.y + 125 * scale);
+  await expect(page.locator('.annotation').first()).toHaveClass(/selected/);
+  await expect(page.locator('.annotation')).toHaveCount(3);
 });
 
 test('回転した用紙で図形をドラッグでき、Escapeで取消し、一本指でも配置できる', async ({ page }, info) => {

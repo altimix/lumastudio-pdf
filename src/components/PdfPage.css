@@ -207,7 +207,6 @@
   touch-action: none;
 }
 .ink-input-layer.eraser { cursor: cell; }
-.shape-input-layer { z-index: 1; }
 .shape-placement-preview {
   position: absolute;
   overflow: visible;
