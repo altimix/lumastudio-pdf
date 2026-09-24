@@ -21,20 +21,23 @@ try {
   assert.equal(await desktop.locator('html').getAttribute('lang'), 'ja');
   assert.equal(await desktop.getByRole('heading', { level: 1 }).count(), 1);
   assert.match(await desktop.getByRole('heading', { level: 1 }).innerText(), /届いたPDFを、\s*返せる書類に/);
-  assert.match(await desktop.locator('.window-topline').innerText(), /v1\.0\.2/);
-  assert.match(await desktop.locator('#workspace-caption').innerText(), /v1\.0\.2/);
+  assert.match(await desktop.locator('.window-topline').innerText(), /v1\.0\.3/);
+  assert.match(await desktop.locator('#workspace-caption').innerText(), /v1\.0\.3/);
   assert.doesNotMatch(await desktop.locator('#workspace-caption').innerText(), /最新版と一部異なります/);
   assert.equal(await desktop.locator('link[rel="canonical"]').getAttribute('href'), 'https://lumastudiopdf.altimix.jp/');
   const structured = JSON.parse(await desktop.locator('script[type="application/ld+json"]').textContent() || '{}');
   assert.equal(structured['@type'], 'SoftwareApplication');
   assert.equal(structured.author?.name, '安藤昇');
-  assert.equal(structured.softwareVersion, '1.0.2');
+  assert.equal(structured.softwareVersion, '1.0.3');
   assert.equal(structured.publisher?.name, '株式会社Altimix');
   assert.equal(await desktop.locator('.contact-actions a').first().getAttribute('href'), 'https://altimix.co.jp/contact/');
   assert.equal(await desktop.locator('.contact-actions a').last().getAttribute('href'), 'https://github.com/altimix/lumastudio-pdf/issues');
   assert.match(await desktop.locator('.feature-list').innerText(), /蛍光マーカー/);
   assert.match(await desktop.locator('.feature-list').innerText(), /日本語メニュー/);
+  assert.match(await desktop.locator('.feature-list').innerText(), /クリックした位置を中心に配置/);
   assert.match(await desktop.locator('.faq-list').innerText(), /最大化した画面を元に戻す/);
+  await desktop.getByText('使い方や最新版はどこで確認できますか？', { exact: true }).click();
+  assert.match(await desktop.locator('.faq-list').innerText(), /ショートカット一覧/);
   assert.equal(await desktop.locator('.site-footer a[href="/privacy/"]').count(), 1);
   assert.equal(await desktop.locator('img:not([alt])').count(), 0);
   for (const selector of ['.workspace-frame img', '.developer-photo img']) {
@@ -42,11 +45,11 @@ try {
     await image.scrollIntoViewIfNeeded();
     assert.equal(await image.evaluate(async element => { await element.decode(); return element.naturalWidth > 100; }), true, `${selector} did not load`);
   }
-  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v1.0.2/';
+  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v1.0.3/';
   const downloads = {
-    'windows-portable': 'LumaStudio-PDF-1.0.2-windows-x64-portable.exe',
-    'mac-arm64': 'LumaStudio-PDF-1.0.2-macos-arm64.zip',
-    'mac-x64': 'LumaStudio-PDF-1.0.2-macos-x64.zip',
+    'windows-portable': 'LumaStudio-PDF-1.0.3-windows-x64-portable.exe',
+    'mac-arm64': 'LumaStudio-PDF-1.0.3-macos-arm64.zip',
+    'mac-x64': 'LumaStudio-PDF-1.0.3-macos-x64.zip',
     'mac-guide': 'README-Mac.txt',
     checksums: 'SHA256SUMS.txt',
     license: 'LICENSE.txt',
@@ -73,7 +76,7 @@ try {
 
   for (const [path, expected] of [
     ['/robots.txt', 200], ['/sitemap.xml', 200], ['/privacy/', 200], ['/assets/favicon.svg', 200],
-    ['/assets/editor-v1.0.2.png', 200], ['/assets/ando2026.png', 200], ['/missing-page', 404],
+    ['/assets/editor-v1.0.3.png', 200], ['/assets/ando2026.png', 200], ['/missing-page', 404],
   ]) {
     const result = await fetch(new URL(path, origin));
     assert.equal(result.status, expected, path);

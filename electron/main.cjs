@@ -8,6 +8,9 @@ app.setName('LumaStudio PDF');
 app.setAppUserModelId('jp.altimix.lumastudio-pdf');
 
 let mainWindow;
+let pendingCloseSave = false;
+let allowCloseAfterSave = false;
+let quitRequested = false;
 let printInbox;
 let inboxWatcher;
 let rendererReady = false;
@@ -148,7 +151,7 @@ function sendMenuAction(action) {
 }
 
 function setMenu() {
-  const action = (label, command) => ({ label, click: () => sendMenuAction(command) });
+  const action = (label, command, accelerator) => ({ label, ...(accelerator ? { accelerator } : {}), click: () => sendMenuAction(command) });
   const template = [];
   if (process.platform === 'darwin') template.push({ role: 'appMenu' });
   template.push({
@@ -160,7 +163,7 @@ function setMenu() {
       } },
       action('PDFを結合…', 'merge-pdf'),
       { type: 'separator' },
-      action('PDFを保存…', 'save-pdf'),
+      action('PDFを保存…', 'save-pdf', 'CmdOrCtrl+S'),
       action('作業データを開く…', 'open-project'),
       action('作業データを保存…', 'save-project'),
       action('印刷…', 'print-pdf'),
@@ -227,6 +230,16 @@ function setMenu() {
       { type: 'separator' },
       action('AI自動記入…', 'ai-autofill'),
     ],
+  }, {
+    label: 'ヘルプ', submenu: [
+      action('使い方マニュアル', 'help-manual'),
+      action('ショートカット一覧', 'help-shortcuts'),
+      action('証明書ガイド', 'help-certificate'),
+      { type: 'separator' },
+      { label: `現在のバージョン v${app.getVersion()}`, enabled: false },
+      { label: '最新版・更新履歴を見る', click: () => void shell.openExternal('https://github.com/altimix/lumastudio-pdf/releases/latest')
+        .catch(() => dialog.showErrorBox('更新情報を開けませんでした', 'インターネット接続を確認して、公式サイトから最新版をご確認ください。')) },
+    ],
   });
   if (!app.isPackaged) template.push({ label: '開発', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -235,6 +248,9 @@ function setMenu() {
 function createWindow() {
   rendererReady = false;
   receiving = false;
+  pendingCloseSave = false;
+  allowCloseAfterSave = false;
+  quitRequested = false;
   const workArea = screen.getPrimaryDisplay().workAreaSize;
   const minWidth = Math.min(980, workArea.width);
   const minHeight = Math.min(680, workArea.height);
@@ -256,12 +272,20 @@ function createWindow() {
   }
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.webContents.on('will-prevent-unload', (event) => {
+    if (allowCloseAfterSave) { event.preventDefault(); return; }
+    if (pendingCloseSave) return;
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: 'question', title: '編集内容を確認',
-      message: '保存していない変更があります。終了しますか？',
-      buttons: ['編集を続ける', '変更を破棄して終了'], defaultId: 0, cancelId: 0,
+      message: '保存していない変更があります。',
+      detail: '完成版のPDF、または後で編集できる作業データを保存してから終了できます。',
+      buttons: ['編集を続ける', 'PDFを保存して終了', '作業データを保存して終了', '変更を破棄して終了'],
+      defaultId: 0, cancelId: 0, noLink: true,
     });
-    if (choice === 1) event.preventDefault();
+    if (choice === 3) event.preventDefault();
+    else if (choice === 1 || choice === 2) {
+      pendingCloseSave = true;
+      mainWindow.webContents.send('luma:save-and-close', choice === 1 ? 'pdf' : 'project');
+    } else quitRequested = false;
   });
   mainWindow.webContents.on('did-start-loading', () => { rendererReady = false; });
   mainWindow.on('closed', () => { mainWindow = undefined; rendererReady = false; receiving = false; });
@@ -311,6 +335,15 @@ function printPdf(bytes) {
 function registerIpc() {
   ipcMain.handle('luma:window-state', (event) => { assertMainSender(event); return windowState(); });
   ipcMain.handle('luma:restore-window', (event) => { assertMainSender(event); restoreMainWindow(); });
+  ipcMain.handle('luma:finish-close-save', (event, saved) => {
+    assertMainSender(event);
+    if (!pendingCloseSave || typeof saved !== 'boolean') throw new Error('保存して終了する操作は開始されていません。');
+    pendingCloseSave = false;
+    if (!saved) { quitRequested = false; return false; }
+    allowCloseAfterSave = true;
+    if (quitRequested) app.quit(); else mainWindow.close();
+    return true;
+  });
   ipcMain.handle('luma:open-help-link', async(event, id) => {
     assertMainSender(event);
     const url = require('./help-links.cjs').getHelpUrl(id);
@@ -494,5 +527,6 @@ if (!app.requestSingleInstanceLock()) {
   }).catch((error) => { dialog.showErrorBox('起動できませんでした', error.message); app.quit(); });
   app.on('activate', () => focusMain());
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-  app.on('before-quit', () => { inboxWatcher?.stop(); selectedCertificate?.fill(0); selectedCertificate = undefined; });
+  app.on('before-quit', () => { quitRequested = true; });
+  app.on('will-quit', () => { inboxWatcher?.stop(); selectedCertificate?.fill(0); selectedCertificate = undefined; });
 }

@@ -208,6 +208,45 @@ test('チェックをクリック中心に置き、縦横比ロックを切り�
   expect(text.y + text.height / 2).toBeCloseTo(300, 1);
 });
 
+test('名前の印鑑と画像印鑑をクリック中心に置き、用紙端でははみ出さない', async ({ page }, info) => {
+  await open(page);
+  const surface = page.getByTestId('pdf-surface');
+  const scale = await surface.evaluate(element => parseFloat((element as HTMLElement).style.width) / 500);
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await page.getByLabel('印鑑に入れる名前', { exact: true }).fill('山田');
+  await surface.click({ position: { x: 150 * scale, y: 200 * scale } });
+
+  const imageData = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 120; canvas.height = 80;
+    const context = canvas.getContext('2d')!;
+    context.strokeStyle = '#bd3030'; context.lineWidth = 6;
+    context.strokeRect(10, 10, 100, 60);
+    return canvas.toDataURL('image/png');
+  });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '画像から印鑑を登録', exact: true }).click();
+  await (await chooser).setFiles({ name: 'image-seal.png', mimeType: 'image/png', buffer: Buffer.from(imageData.split(',')[1], 'base64') });
+  const dialog = page.getByRole('dialog', { name: '印鑑画像を登録' });
+  await dialog.getByRole('textbox', { name: '印鑑名', exact: true }).fill('画像印');
+  await dialog.getByRole('button', { name: 'この印鑑を登録', exact: true }).click();
+  await surface.click({ position: { x: 260 * scale, y: 320 * scale } });
+  await page.getByRole('button', { name: '印鑑', exact: true }).click();
+  await surface.click({ position: { x: 10 * scale, y: 10 * scale } });
+
+  const saved = await project(page, info, 'centered-stamps.lumapdf');
+  expect(saved.data.annotations).toHaveLength(3);
+  const [named, image, edge] = saved.data.annotations;
+  expect(named.type).toBe('stamp');
+  expect(named.x + named.width / 2).toBeCloseTo(150, 1);
+  expect(named.y + named.height / 2).toBeCloseTo(200, 1);
+  expect(image).toMatchObject({ type: 'image', stampSource: true });
+  expect(image.x + image.width / 2).toBeCloseTo(260, 1);
+  expect(image.y + image.height / 2).toBeCloseTo(320, 1);
+  expect(edge.x).toBe(0);
+  expect(edge.y).toBe(0);
+});
+
 test('印鑑サイズを変更すると次の配置と再読み込み後にも同じ大きさを使う', async ({ page }) => {
   await open(page);
   await page.getByRole('button', { name: '印鑑', exact: true }).click();

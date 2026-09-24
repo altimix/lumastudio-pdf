@@ -17,6 +17,18 @@ contextBridge.exposeInMainWorld('lumaDesktop', {
     ipcRenderer.on('luma:menu-action', listener);
     return () => ipcRenderer.removeListener('luma:menu-action', listener);
   },
+  onSaveAndClose: (callback) => {
+    if (typeof callback !== 'function') throw new TypeError('A callback is required.');
+    const listener = (_event, format) => {
+      if (format !== 'pdf' && format !== 'project') return;
+      Promise.resolve().then(() => callback(format)).catch(() => {
+        void ipcRenderer.invoke('luma:finish-close-save', false).catch(() => {});
+      });
+    };
+    ipcRenderer.on('luma:save-and-close', listener);
+    return () => ipcRenderer.removeListener('luma:save-and-close', listener);
+  },
+  finishCloseSave: (saved) => ipcRenderer.invoke('luma:finish-close-save', saved),
   openPdf: () => ipcRenderer.invoke('luma:open-pdf'),
   openPdfs: () => ipcRenderer.invoke('luma:open-pdfs'),
   openProject: () => ipcRenderer.invoke('luma:open-project'),
