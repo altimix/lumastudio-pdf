@@ -232,6 +232,9 @@ test('長い日本語を半分に縮小しても末尾の文字を欠かさずPD
   await input.fill(text);
   await input.press('ControlOrMeta+Enter');
   const annotation = page.getByRole('button', { name: `文字: ${text}`, exact: true });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await lock.click();
   const before = await dimensions(annotation);
   expect(before.width / 0.85).toBeCloseTo(240, 1);
   const handle = (await annotation.getByTestId('resize-se').boundingBox())!;
@@ -275,12 +278,68 @@ test('長い日本語を半分に縮小しても末尾の文字を欠かさずPD
   await page.screenshot({ path: testInfo.outputPath('small-japanese-complete.png'), fullPage: true });
 });
 
+test('縦横比を固定しない文字ボックスを辺から縮めても折り返した末尾をPDFに残せる', async ({ page }, testInfo) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await placeAt(page, 70, 150);
+  const text = 'あ'.repeat(24);
+  const input = page.getByRole('textbox', { name: 'PDF上の文字入力', exact: true });
+  await input.fill(text);
+  await input.press('ControlOrMeta+Enter');
+  const annotation = page.getByRole('button', { name: `文字: ${text}`, exact: true });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  const before = await dimensions(annotation);
+
+  const south = (await annotation.getByTestId('resize-s').boundingBox())!;
+  await page.mouse.move(south.x + south.width / 2, south.y + south.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(south.x + south.width / 2, south.y + south.height / 2 - before.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await dimensions(annotation)).height).toBeCloseTo(before.height, 1);
+
+  const east = (await annotation.getByTestId('resize-e').boundingBox())!;
+  await page.mouse.move(east.x + east.width / 2, east.y + east.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(east.x + east.width / 2 - before.width * 0.65, east.y + east.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await dimensions(annotation)).height).toBeGreaterThan(before.height * 1.6);
+
+  const project = await saveProject(page, testInfo);
+  const resized = project.data.annotations[0];
+  expect(resized.text).toBe(text);
+  expect(resized.width).toBeLessThan(100);
+  expect(resized.height).toBeGreaterThan(resized.fontSize! * 1.4 * 2 + 6);
+  expect(resized.fontSize).toBe(11);
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const path = testInfo.outputPath('unlocked-wrapped-text.pdf');
+  await (await downloaded).saveAs(path);
+  const saved = await PDFDocument.load(await readFile(path));
+  const images = saved.getPage(0).node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+  const raster = saved.context.lookup(images.entries()[0][1], PDFRawStream);
+  const mask = raster.dict.lookup(PDFName.of('SMask'), PDFRawStream);
+  const width = mask.dict.lookup(PDFName.of('Width'), PDFNumber).asNumber();
+  const height = mask.dict.lookup(PDFName.of('Height'), PDFNumber).asNumber();
+  const alpha = decodePDFRawStream(mask).decode();
+  expect(alpha.length).toBe(width * height);
+  let lastLineInk = 0;
+  for (let y = Math.floor(height * 0.65); y < height; y++) {
+    for (let x = 0; x < width; x++) if (alpha[y * width + x] > 20) lastLineInk++;
+  }
+  expect(lastLineInk).toBeGreaterThan(10);
+});
+
 test('文字を角から拡大して一度で元に戻せ、矢印キーで微調整した状態を再開できる', async ({ page }, testInfo) => {
   await openFixture(page);
   await page.getByRole('button', { name: '文字を記入', exact: true }).click();
   await page.getByLabel('記入する文字', { exact: true }).fill('大きさを変更');
   await placeAt(page, 50, 160);
   const annotation = page.getByRole('button', { name: '文字: 大きさを変更', exact: true });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
   const resized = await growSelected(page, annotation, 1.4);
   const fontSize = Number(await page.getByLabel('文字サイズ', { exact: true }).inputValue());
   expect(fontSize).toBeGreaterThan(11);
