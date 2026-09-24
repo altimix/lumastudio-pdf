@@ -93,6 +93,7 @@ import { MergeDialog, type MergeFile } from "./components/MergeDialog";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { AiSettingsDialog } from "./components/AiSettingsDialog";
 import { CertificateGuide } from "./components/CertificateGuide";
+import { HelpDialog, type HelpSection } from "./components/HelpDialog";
 import { EditableCopyDialog, type EditableCopyReason } from "./components/EditableCopyDialog";
 import { encodeProject, decodeProject } from "./lib/project";
 import {
@@ -101,6 +102,7 @@ import {
 } from "./components/PageContextMenu";
 
 type EditState = { pages: PageInfo[]; annotations: Annotation[] };
+type SaveOutcome = "saved" | "canceled" | "failed";
 type Placement = {
   pageId: string;
   type: "text" | "stamp";
@@ -200,6 +202,8 @@ export default function App() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [certificateGuideOpen, setCertificateGuideOpen] = useState(false);
+  const [helpSection, setHelpSection] = useState<HelpSection | null>(null);
+  const closeHelp = useCallback(() => setHelpSection(null), []);
   const [projectError, setProjectError] = useState("");
   const projectInput = useRef<HTMLInputElement>(null);
   const [pageMenu, setPageMenu] = useState<PageMenuTarget | null>(null);
@@ -311,6 +315,7 @@ export default function App() {
     projectOpen,
     aiSettingsOpen,
     certificateGuideOpen,
+    helpOpen: Boolean(helpSection),
     editableCopyOpen: Boolean(editableCopySource),
   });
   currentRef.current = {
@@ -322,6 +327,7 @@ export default function App() {
     projectOpen,
     aiSettingsOpen,
     certificateGuideOpen,
+    helpOpen: Boolean(helpSection),
     editableCopyOpen: Boolean(editableCopySource),
   };
   const notify = (value: string) => {
@@ -673,6 +679,7 @@ export default function App() {
         currentRef.current.projectOpen ||
         currentRef.current.aiSettingsOpen ||
         currentRef.current.certificateGuideOpen ||
+        currentRef.current.helpOpen ||
         currentRef.current.editableCopyOpen
       )
     )
@@ -940,8 +947,8 @@ export default function App() {
     setEdits(prepared);
     return prepared;
   };
-  const save = async () => {
-    if (!original.current || busy || signedInput) return;
+  const save = async (): Promise<SaveOutcome> => {
+    if (!original.current || busy || signedInput) return "failed";
     const current = flushInlineText();
     currentRef.current.busy = "PDFを書き出しています";
     setBusy("PDFを書き出しています");
@@ -955,7 +962,7 @@ export default function App() {
       );
       const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
       if (window.lumaDesktop) {
-        if (!(await window.lumaDesktop.savePdf(Array.from(data), name))) return;
+        if (!(await window.lumaDesktop.savePdf(Array.from(data), name))) return "canceled";
       } else {
         const blob = new Blob([new Uint8Array(data)], {
           type: "application/pdf",
@@ -969,15 +976,17 @@ export default function App() {
       }
       setSavedState(JSON.stringify(prepared));
       notify("記入済みPDFを書き出しました。メールに添付して返送できます。");
+      return "saved";
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存できませんでした。");
+      return "failed";
     } finally {
       currentRef.current.busy = "";
       setBusy("");
     }
   };
-  const saveProject = async () => {
-    if (!original.current || busy || signedInput) return;
+  const saveProject = async (): Promise<SaveOutcome> => {
+    if (!original.current || busy || signedInput) return "failed";
     const current = flushInlineText();
     currentRef.current.busy = "作業データを保存しています";
     setBusy("作業データを保存しています");
@@ -993,7 +1002,7 @@ export default function App() {
       const name = filename.replace(/\.pdf$/i, "") + ".lumapdf";
       if (window.lumaDesktop) {
         if (!(await window.lumaDesktop.saveProject(Array.from(bytes), name)))
-          return;
+          return "canceled";
       } else {
         const url = URL.createObjectURL(
           new Blob([new Uint8Array(bytes)], { type: "application/json" }),
@@ -1007,15 +1016,36 @@ export default function App() {
       setSavedState(JSON.stringify(prepared));
       setProjectOpen(false);
       notify("編集を再開できる作業データを保存しました。");
+      return "saved";
     } catch (e) {
-      setProjectError(
-        e instanceof Error ? e.message : "作業データを保存できませんでした。",
-      );
+      const message = e instanceof Error ? e.message : "作業データを保存できませんでした。";
+      setProjectError(message);
+      setError(message);
+      return "failed";
     } finally {
       currentRef.current.busy = "";
       setBusy("");
     }
   };
+  useEffect(() => {
+    const desktop = window.lumaDesktop;
+    if (!desktop?.onSaveAndClose) return;
+    return desktop.onSaveAndClose(async (format) => {
+      let outcome: SaveOutcome = "failed";
+      try {
+        outcome = format === "project" ? await saveProject() : await save();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "保存できませんでした。");
+      }
+      try {
+        await desktop.finishCloseSave(outcome === "saved");
+        if (outcome === "canceled") notify("保存を取り消したため、アプリを閉じずに編集を続けます。");
+        else if (outcome === "failed") setMessage("保存できなかったため、アプリを閉じずに編集を続けます。");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "終了処理を完了できませんでした。");
+      }
+    });
+  });
   const restoreProject = async (bytes: Uint8Array) => {
     if (busy) return;
     if (
@@ -1237,7 +1267,8 @@ export default function App() {
         projectOpen ||
         pageMenu ||
         aiSettingsOpen ||
-        certificateGuideOpen
+        certificateGuideOpen ||
+        helpSection
       )
         return;
       const typing =
@@ -1391,7 +1422,7 @@ export default function App() {
       width = Math.min(page.width, width);
       height = Math.min(page.height, height);
     }
-    const centerX = tool === "check" || tool === "shape";
+    const centerX = tool === "check" || tool === "shape" || tool === "stamp";
     const centerY = centerX || tool === "text";
     const lineShape = tool === "shape" && (shapeKind === "line" || shapeKind === "double-line");
     const annotation: Annotation = {
@@ -1544,9 +1575,9 @@ export default function App() {
     return window.lumaDesktop.onMenuAction((action) => {
       if (
         busy || editableCopySource || profileOpen || printHelp || aiOpen || stampFile ||
-        signatureOpen || mergeOpen || projectOpen || pageMenu || aiSettingsOpen || certificateGuideOpen
+        signatureOpen || mergeOpen || projectOpen || pageMenu || aiSettingsOpen || certificateGuideOpen || helpSection
       ) return;
-      if (!pdf && !["merge-pdf", "open-project", "toggle-pages"].includes(action)) {
+      if (!pdf && !["merge-pdf", "open-project", "toggle-pages", "help-manual", "help-shortcuts", "help-certificate"].includes(action)) {
         setError("先にPDFを開いてください。");
         return;
       }
@@ -1587,6 +1618,9 @@ export default function App() {
         case "tool-marker": chooseTool("marker"); break;
         case "tool-eraser": chooseTool("eraser"); break;
         case "ai-autofill": setAiResult(null); setAiOpen(true); break;
+        case "help-manual": setHelpSection("manual"); break;
+        case "help-shortcuts": setHelpSection("shortcuts"); break;
+        case "help-certificate": setCertificateGuideOpen(true); break;
       }
     });
   });
@@ -3084,6 +3118,14 @@ export default function App() {
                 }
               : undefined
           }
+        />
+      )}
+      {helpSection && (
+        <HelpDialog
+          section={helpSection}
+          version={appVersion}
+          onSectionChange={setHelpSection}
+          onClose={closeHelp}
         />
       )}
       {projectOpen && (

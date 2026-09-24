@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright';
 import { expect } from '@playwright/test';
 import { extractFile } from '@electron/asar';
+import { PDFDocument } from 'pdf-lib';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = process.argv[2] ? path.resolve(process.argv[2]) : path.join(repo, 'release');
@@ -65,11 +66,13 @@ try {
   const bridge = await page.evaluate(async () => ({
     rendererNode: typeof window.require,
     signAndSavePdf: typeof window.lumaDesktop?.signAndSavePdf,
+    saveAndClose: typeof window.lumaDesktop?.onSaveAndClose,
     aiAvailable: (await window.lumaDesktop.getAiStatus()).available,
     printInbox: await window.lumaDesktop.getPrintInbox(),
   }));
   assert.equal(bridge.rendererNode, 'undefined');
   assert.equal(bridge.signAndSavePdf, 'function');
+  assert.equal(bridge.saveAndClose, 'function');
   assert.equal(bridge.aiAvailable, false);
   assert.equal(path.resolve(bridge.printInbox), path.resolve(printInbox));
   console.log(JSON.stringify({ stage: 'desktop-bridge-ready', platform: process.platform }));
@@ -89,6 +92,32 @@ try {
   for (const [group, label] of [['ファイル', '作業データを保存…'], ['ページ', '右へ回転'], ['道具', '蛍光ペン']]) {
     assert.ok(menus[group]?.includes(label), `${group}メニューに${label}がありません。`);
   }
+  const saveAccelerator = await application.evaluate(({ Menu }) => Menu.getApplicationMenu().items
+    .find(item => item.label === 'ファイル').submenu.items.find(item => item.label === 'PDFを保存…').accelerator);
+  assert.match(saveAccelerator, /^(?:CmdOrCtrl|CommandOrControl)\+S$/);
+  const appVersion = await application.evaluate(({ app }) => app.getVersion());
+  assert.deepEqual(menus['ヘルプ'], [
+    '使い方マニュアル', 'ショートカット一覧', '証明書ガイド',
+    `現在のバージョン v${appVersion}`, '最新版・更新履歴を見る',
+  ]);
+  await clickMenu(application, 'ヘルプ', '使い方マニュアル');
+  const manual = page.getByRole('dialog', { name: '使い方マニュアル' });
+  await expect(manual).toContainText('印鑑は名前で作るか画像を登録でき');
+  const closeHelp = manual.getByRole('button', { name: 'ヘルプを閉じる' });
+  await expect(closeHelp).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(manual.getByRole('button', { name: 'ショートカット一覧' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(closeHelp).toBeFocused();
+  await manual.getByRole('button', { name: 'ショートカット一覧' }).click();
+  const shortcutGuide = page.getByRole('dialog', { name: 'ショートカット一覧' });
+  await expect(shortcutGuide.getByRole('row', { name: /完成したPDFを保存/ })).toContainText('Ctrl+S');
+  await shortcutGuide.getByRole('button', { name: 'ヘルプを閉じる' }).click();
+  await application.evaluate(({ shell }) => {
+    shell.openExternal = async (url) => { globalThis.__helpUpdateUrl = url; };
+  });
+  await clickMenu(application, 'ヘルプ', '最新版・更新履歴を見る');
+  assert.equal(await application.evaluate(() => globalThis.__helpUpdateUrl), 'https://github.com/altimix/lumastudio-pdf/releases/latest');
   console.log(JSON.stringify({ stage: 'japanese-menu-ready', platform: process.platform }));
   const initialWindowState = await page.evaluate(() => window.lumaDesktop.getWindowState());
   assert.equal(typeof initialWindowState.maximized, 'boolean');
@@ -209,10 +238,66 @@ try {
   await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: '印鑑', exact: true }).click();
   await expect(sealSize).toHaveValue('44');
+  const keyboardPdfPath = path.join(userData, 'keyboard-saved.pdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    globalThis.__saveDialogCalls = 0;
+    dialog.showSaveDialog = async () => {
+      globalThis.__saveDialogCalls++;
+      return { canceled: false, filePath };
+    };
+  }, keyboardPdfPath);
+  await page.getByRole('button', { name: 'チェック', exact: true }).click();
+  await page.getByTestId('pdf-surface').click({ position: { x: 120, y: 190 } });
+  await expect(page.locator('.unsaved')).toHaveCount(1);
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.locator('.unsaved')).toHaveCount(0);
+  assert.equal(await application.evaluate(() => globalThis.__saveDialogCalls), 1, 'Ctrl/⌘+S must save once.');
+  assert.equal((await PDFDocument.load(await fs.readFile(keyboardPdfPath))).getPageCount(), 1);
+  console.log(JSON.stringify({ stage: 'keyboard-pdf-saved', platform: process.platform }));
+
+  // Electron handles this beforeunload itself; Playwright's default CDP
+  // auto-dismiss can race the native confirmation and see no JS dialog.
+  page.on('dialog', dialog => { void dialog.dismiss().catch(() => {}); });
+  await page.getByRole('button', { name: 'チェック', exact: true }).click();
+  await page.getByTestId('pdf-surface').click({ position: { x: 230, y: 280 } });
+  await expect(page.locator('.unsaved')).toHaveCount(1);
+  await application.evaluate(({ BrowserWindow, dialog }) => {
+    dialog.showMessageBoxSync = (_window, options) => { globalThis.__closeChoices = options.buttons; return 0; };
+    BrowserWindow.getAllWindows()[0].close();
+  });
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  assert.deepEqual(await application.evaluate(() => globalThis.__closeChoices), [
+    '編集を続ける', 'PDFを保存して終了', '作業データを保存して終了', '変更を破棄して終了',
+  ]);
+  await application.evaluate(({ BrowserWindow, dialog }) => {
+    dialog.showMessageBoxSync = () => 2;
+    dialog.showSaveDialog = async () => ({ canceled: true });
+    BrowserWindow.getAllWindows()[0].close();
+  });
+  await expect(page.getByRole('status').filter({ hasText: '保存を取り消したため' })).toBeVisible();
+  await expect(page.locator('.unsaved')).toHaveCount(1);
+  await application.evaluate(({ BrowserWindow, dialog }, filePath) => {
+    dialog.showMessageBoxSync = () => 1;
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    BrowserWindow.getAllWindows()[0].close();
+  }, path.join(userData, 'missing-directory', 'cannot-save.pdf'));
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('ENOENT');
+  await expect(page.locator('.unsaved')).toHaveCount(1);
+  const closePdfPath = path.join(userData, 'close-saved.pdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showMessageBoxSync = () => 1;
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, closePdfPath);
+  const windowClosed = page.waitForEvent('close', { timeout: 15_000 });
+  await application.evaluate(({ app }) => app.quit());
+  await windowClosed;
+  assert.equal((await PDFDocument.load(await fs.readFile(closePdfPath))).getPageCount(), 1);
+  console.log(JSON.stringify({ stage: 'save-and-close-complete', platform: process.platform }));
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, projectV2Saved: true, stampSizeRemembered: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, projectV2Saved: true, stampSizeRemembered: true, keyboardPdfSaved: true, canceledClosePreserved: true, pdfCloseSaved: true, externalApiCalls: 0, physicalPrintTested: false }));
 } finally {
-  if (application) {
+  if (application && application.process().exitCode === null) {
     let closeTimer;
     try {
       await Promise.race([
