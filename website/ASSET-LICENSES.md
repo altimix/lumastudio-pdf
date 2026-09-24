@@ -4,6 +4,7 @@
 - `public/assets/editor-v0.3.0.png`: 架空のサンプル書類を使った LumaStudio PDF の画面画像。ソースコードと同じ GPL-3.0-only に従います。
 - `public/assets/editor-v1.0.2.png`: 架空のサンプル書類を使った v1.0.2 の編集画面画像。ソースコードと同じ GPL-3.0-only に従います。
 - `public/assets/editor-v1.0.3.png`: 架空のサンプル書類に例示用の印鑑を置いた v1.0.3 の編集画面画像。ソースコードと同じ GPL-3.0-only に従います。
+- `public/assets/editor-v1.0.4.png`: 架空のサンプル書類で図形と蛍光ペンを配置した v1.0.4 の編集画面画像。ソースコードと同じ GPL-3.0-only に従います。
 - `public/assets/favicon.svg`: LumaStudio PDF のアイコン。ソースコードと同じ GPL-3.0-only に従います。
 - アプリに同梱する日本語フォント: SIL Open Font License 1.1。各書体の原文は [`public/font-licenses/`](../public/font-licenses/) を参照してください。
 
