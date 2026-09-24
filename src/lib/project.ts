@@ -229,7 +229,7 @@ function validateProject(value: unknown): PdfProject {
 export function encodeProject(project: PdfProject): Uint8Array {
   const clean = validateProject(project)
   const serialized = JSON.stringify({
-    app: 'LumaStudio PDF', version: 2,
+    app: 'LumaStudio PDF', version: 3,
     filename: clean.filename,
     original: encodeBase64(clean.original),
     pages: clean.pages,
@@ -247,7 +247,7 @@ export function decodeProject(bytes: Uint8Array): PdfProject {
   catch { fail('作業ファイルの文字形式またはJSON形式が不正です。') }
   const raw = object(parsed, '作業ファイル')
   if (raw.app !== 'LumaStudio PDF') fail('LumaStudio PDFの作業ファイルを選択してください。')
-  if (raw.version !== 1 && raw.version !== 2) fail('この作業ファイルのバージョンには対応していません。')
+  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) fail('この作業ファイルのバージョンには対応していません。')
   return validateProject({
     filename: raw.filename,
     original: decodeBase64(raw.original, MAX_PDF_BYTES, '元のPDF（50MBまで）'),

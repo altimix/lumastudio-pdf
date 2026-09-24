@@ -22,7 +22,9 @@ export function createInkAnnotation(
     x: Math.min(page.width, Math.max(0, point.x)),
     y: Math.min(page.height, Math.max(0, point.y)),
   }))
-  const margin = strokeWidth / 2 + 2
+  // A diagonal square tip projects farther onto each axis than a round tip.
+  // Reserve that space for every new marker so changing its tip stays lossless.
+  const margin = (kind === 'marker' ? strokeWidth / Math.SQRT2 : strokeWidth / 2) + 2
   const left = Math.max(0, Math.min(...clamped.map(point => point.x)) - margin)
   const top = Math.max(0, Math.min(...clamped.map(point => point.y)) - margin)
   const right = Math.min(page.width, Math.max(...clamped.map(point => point.x)) + margin)
@@ -39,6 +41,17 @@ export function createInkAnnotation(
     ...(kind === 'marker' ? { markerCap } : {}),
     points: clamped.map(point => ({ x: (point.x - x) / width, y: (point.y - y) / height })),
   }
+}
+
+/** Rebox older round markers when changing to square tips without moving the path. */
+export function withMarkerCap(annotation: Annotation, page: Pick<PageInfo, 'id' | 'width' | 'height'>, markerCap: MarkerCap): Annotation {
+  if (annotation.type !== 'marker' || !annotation.points?.length) return annotation
+  const points = annotation.points.map(point => ({
+    x: annotation.x + point.x * annotation.width,
+    y: annotation.y + point.y * annotation.height,
+  }))
+  const resized = createInkAnnotation(annotation.id, page, 'marker', points, annotation.color ?? '#ffe14a', annotation.strokeWidth ?? 18, markerCap)
+  return { ...annotation, x: resized.x, y: resized.y, width: resized.width, height: resized.height, points: resized.points, markerCap }
 }
 
 function segmentDistance(point: InkPoint, a: InkPoint, b: InkPoint): number {

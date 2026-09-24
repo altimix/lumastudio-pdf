@@ -1008,7 +1008,7 @@ export function PdfPage({
                 ? inkTool === 'marker' && markerCap === 'square'
                   ? <rect x={inkPreview[0].x - inkWidth / 2} y={inkPreview[0].y - inkWidth / 2} width={inkWidth} height={inkWidth} fill={inkColor} opacity={0.35} />
                   : <circle cx={inkPreview[0].x} cy={inkPreview[0].y} r={inkWidth / 2} fill={inkColor} opacity={inkTool === 'marker' ? 0.35 : 1} />
-                : <polyline points={inkPreview.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke={inkColor} strokeWidth={inkWidth} strokeLinecap={inkTool === 'marker' && markerCap === 'square' ? 'square' : 'round'} strokeLinejoin={inkTool === 'marker' && markerCap === 'square' ? 'miter' : 'round'} opacity={inkTool === 'marker' ? 0.35 : 1} />)}
+                : <polyline points={inkPreview.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke={inkColor} strokeWidth={inkWidth} strokeLinecap={inkTool === 'marker' && markerCap === 'square' ? 'square' : 'round'} strokeLinejoin={inkTool === 'marker' && markerCap === 'square' ? 'bevel' : 'round'} opacity={inkTool === 'marker' ? 0.35 : 1} />)}
               {inkTool === 'eraser' && eraserPoint && <circle cx={eraserPoint.x} cy={eraserPoint.y} r={8} fill="#ffffff55" stroke="#297c6c" strokeWidth={1.5} />}
             </svg>
           </div>

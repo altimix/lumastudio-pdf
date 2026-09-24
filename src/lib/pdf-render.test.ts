@@ -105,7 +105,7 @@ describe('material rendering for preview and PDF export', () => {
     const square = drawingContext().context
     await annotationToDataUrl({ ...base, type: 'marker', markerCap: 'square', strokeWidth: 18, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
     expect(square.lineCap).toBe('square')
-    expect(square.lineJoin).toBe('miter')
+    expect(square.lineJoin).toBe('bevel')
     const dot = drawingContext().context
     await annotationToDataUrl({ ...base, type: 'marker', markerCap: 'square', strokeWidth: 18, points: [{ x: 0.5, y: 0.5 }] })
     expect(dot.rect).toHaveBeenCalledWith(31, 11, 18, 18)

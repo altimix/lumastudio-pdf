@@ -72,7 +72,7 @@ import {
   measureTextHeight,
   resolveTextGeometry,
 } from "./lib/fonts";
-import { createInkAnnotation, type InkKind, type InkPoint } from "./lib/ink";
+import { createInkAnnotation, withMarkerCap, type InkKind, type InkPoint } from "./lib/ink";
 import type { ShapePlacement } from "./lib/shape-placement";
 import { NumericField } from "./components/NumericField";
 import {
@@ -485,6 +485,8 @@ export default function App() {
     sheet: PageInfo,
   ) => {
     const updated = { ...source, ...change };
+    if (source.type === "marker" && change.markerCap === "square" && source.markerCap !== "square")
+      Object.assign(updated, withMarkerCap(source, sheet, "square"));
     if (updated.type === "shape" && change.shapeKind && change.shapeKind !== "line" && change.shapeKind !== "double-line")
       updated.lineDirection = undefined;
     if (isAspectLocked(source) && ("width" in change || "height" in change)) {

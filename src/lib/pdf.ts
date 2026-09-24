@@ -218,7 +218,7 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
     context.lineWidth = annotation.strokeWidth ?? (annotation.type === 'marker' ? 18 : 2)
     const squareTip = annotation.type === 'marker' && annotation.markerCap === 'square'
     context.lineCap = squareTip ? 'square' : 'round'
-    context.lineJoin = squareTip ? 'miter' : 'round'
+    context.lineJoin = squareTip ? 'bevel' : 'round'
     if (points.length === 1) {
       context.beginPath()
       if (squareTip) context.rect(points[0].x * width - context.lineWidth / 2, points[0].y * height - context.lineWidth / 2, context.lineWidth, context.lineWidth)

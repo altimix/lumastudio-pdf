@@ -34,11 +34,13 @@ function decodeRaw(value: unknown) {
 }
 
 describe('editable PDF project', () => {
-  it('writes version 2 so older apps cannot silently discard new styles and still reads version 1', () => {
+  it('writes version 3 so older apps cannot discard marker tips or line directions, and still reads versions 1 and 2', () => {
     const raw = rawExample()
-    expect(raw.version).toBe(2)
-    raw.version = 1
-    expect(decodeRaw(raw)).toEqual(example())
+    expect(raw.version).toBe(3)
+    for (const version of [1, 2]) {
+      raw.version = version
+      expect(decodeRaw(raw)).toEqual(example())
+    }
   })
   it('round-trips original PDF bytes, page order and rotation, annotation IDs, text, seals and images', async () => {
     const pdf = await PDFDocument.create()
@@ -144,7 +146,7 @@ describe('editable PDF project', () => {
 
   it.each([
     ['wrong app', (raw: any) => { raw.app = 'another editor' }, /LumaStudio/],
-    ['future version', (raw: any) => { raw.version = 3 }, /バージョン/],
+    ['future version', (raw: any) => { raw.version = 4 }, /バージョン/],
     ['missing version', (raw: any) => { delete raw.version }, /バージョン/],
     ['empty page list', (raw: any) => { raw.pages = [] }, /ページ数/],
     ['too many pages', (raw: any) => { raw.pages = Array(201).fill(raw.pages[0]) }, /ページ数/],

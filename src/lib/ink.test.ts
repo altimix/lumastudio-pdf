@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInkAnnotation, inkHitTest, inkStrokeIntersectsSegment, MAX_INK_POINTS } from './ink'
+import { createInkAnnotation, inkHitTest, inkStrokeIntersectsSegment, MAX_INK_POINTS, withMarkerCap } from './ink'
 
 const page = { id: 'page', width: 500, height: 700 }
 
@@ -40,6 +40,33 @@ describe('editable pen and marker paths', () => {
         expect(stroke.y + stroke.points![index].y * stroke.height).toBeCloseTo(point.y)
       })
     }
+  })
+
+  it('reserves the diagonal reach of square tips and preserves old paths when their tip changes', () => {
+    const points = [{ x: 100, y: 100 }, { x: 200, y: 200 }]
+    const square = createInkAnnotation('wide', page, 'marker', points, '#ffe14a', 72)
+    const reach = 72 / Math.SQRT2
+    expect(square.x).toBeLessThan(100 - reach)
+    expect(square.y).toBeLessThan(100 - reach)
+    expect(square.x + square.width).toBeGreaterThan(200 + reach)
+    expect(square.y + square.height).toBeGreaterThan(200 + reach)
+    const oldMargin = 72 / 2 + 2
+    const old = {
+      ...square,
+      x: 100 - oldMargin, y: 100 - oldMargin,
+      width: 100 + oldMargin * 2, height: 100 + oldMargin * 2,
+      points: points.map(point => ({ x: (point.x - (100 - oldMargin)) / (100 + oldMargin * 2), y: (point.y - (100 - oldMargin)) / (100 + oldMargin * 2) })),
+      markerCap: undefined,
+    }
+    const converted = withMarkerCap(old, page, 'square')
+    expect(converted.x).toBeCloseTo(square.x)
+    expect(converted.y).toBeCloseTo(square.y)
+    expect(converted.width).toBeCloseTo(square.width)
+    expect(converted.height).toBeCloseTo(square.height)
+    converted.points!.forEach((point, index) => {
+      expect(converted.x + point.x * converted.width).toBeCloseTo(points[index].x)
+      expect(converted.y + point.y * converted.height).toBeCloseTo(points[index].y)
+    })
   })
 
   it('erases a stroke crossed between two distant pointer events', () => {
