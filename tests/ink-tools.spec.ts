@@ -31,7 +31,7 @@ async function project(page: Page, info: TestInfo, name: string) {
   await page.getByRole('button', { name: '作業データを保存', exact: true }).click();
   const path = info.outputPath(name);
   await (await download).saveAs(path);
-  return { path, data: JSON.parse(await readFile(path, 'utf8')) as { pages: { rotation: number }[]; annotations: { type: string; points?: { x: number; y: number }[]; color?: string }[] } };
+  return { path, data: JSON.parse(await readFile(path, 'utf8')) as { pages: { rotation: number }[]; annotations: { type: string; points?: { x: number; y: number }[]; color?: string; markerCap?: string }[] } };
 }
 
 test.beforeEach(async ({ context }) => {
@@ -72,6 +72,81 @@ test('ペン手書き・Shift直線・半透明マーカーをPDFと作業デー
     return dark > 100 && yellow > 100;
   })).toBe(true);
   await page.screenshot({ path: info.outputPath('ink-exported.png'), fullPage: true });
+});
+
+test('蛍光ペンの角と丸を選び、描画後の変更・作業再開・完成PDFに反映する', async ({ page }, info) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '蛍光ペン', exact: true }).click();
+  const cap = page.getByLabel('蛍光ペンの端', { exact: true });
+  await expect(cap).toHaveValue('square');
+  await dragOnPage(page, [80, 330], [230, 330], true);
+  await cap.selectOption('round');
+  await dragOnPage(page, [80, 380], [230, 380], true);
+  await page.getByRole('button', { name: '選択・移動', exact: true }).click();
+  await page.getByRole('button', { name: /^蛍光ペン:/ }).first().click();
+  await expect(cap).toHaveValue('square');
+  await cap.selectOption('round');
+  await expect(cap).toHaveValue('round');
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  const saved = await project(page, info, 'marker-tips.lumapdf');
+  expect(saved.data.annotations.map(annotation => annotation.markerCap)).toEqual(['square', 'round']);
+  await page.reload();
+  await page.getByTestId('project-input').setInputFiles(saved.path);
+  await expect(page.locator('.annotation')).toHaveCount(2);
+  await page.getByRole('button', { name: /^蛍光ペン:/ }).first().click();
+  await expect(page.getByLabel('蛍光ペンの端', { exact: true })).toHaveValue('square');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const exported = info.outputPath('marker-tips.pdf');
+  await (await download).saveAs(exported);
+  await page.getByTestId('pdf-input').setInputFiles(exported);
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  await expect.poll(() => page.locator('.pdf-canvas').evaluate(element => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext('2d')!;
+    return [[72, 322], [72, 372]].map(([x, y]) => {
+      const pixel = context.getImageData(Math.round(x * canvas.width / 500), Math.round(y * canvas.height / 700), 1, 1).data;
+      return pixel[2] < 235 ? 'yellow' : 'white';
+    });
+  })).toEqual(['yellow', 'white']);
+  await page.screenshot({ path: info.outputPath('marker-tips.png'), fullPage: true });
+});
+
+test('太い斜めの角端マーカーは画像の端で切れない', async ({ page }, info) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: '蛍光ペン', exact: true }).click();
+  await expect(page.getByLabel('蛍光ペンの端', { exact: true })).toHaveValue('square');
+  const width = page.getByRole('spinbutton', { name: '手書き線の太さ', exact: true });
+  await width.fill('72');
+  await width.press('Enter');
+  await dragOnPage(page, [100, 120], [180, 200], true);
+  const image = page.locator('.annotation img');
+  await expect(image).toHaveAttribute('src', /^data:image\/png/);
+  const pixels = await image.evaluate(element => {
+    const image = element as HTMLImageElement;
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let painted = false, clipped = false;
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      if (data[(y * canvas.width + x) * 4 + 3] > 4) {
+        painted = true;
+        if (x < 2 || y < 2 || x >= canvas.width - 2 || y >= canvas.height - 2) clipped = true;
+      }
+    }
+    return { painted, clipped };
+  });
+  expect(pixels).toEqual({ painted: true, clipped: false });
+  const saved = await project(page, info, 'diagonal-square-marker.lumapdf');
+  expect(saved.data.annotations[0].markerCap).toBe('square');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const exported = info.outputPath('diagonal-square-marker.pdf');
+  await (await download).saveAs(exported);
+  expect((await PDFDocument.load(await readFile(exported))).getPageCount()).toBe(1);
 });
 
 test('細い直線の色と縦横比ロックを変えても配置と大きさが変わらない', async ({ page }) => {

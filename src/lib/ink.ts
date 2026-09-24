@@ -1,4 +1,4 @@
-import type { Annotation, PageInfo } from './types'
+import type { Annotation, MarkerCap, PageInfo } from './types'
 
 export type InkPoint = { x: number; y: number }
 export type InkKind = 'pen' | 'marker'
@@ -12,6 +12,7 @@ export function createInkAnnotation(
   points: InkPoint[],
   color: string,
   strokeWidth: number,
+  markerCap: MarkerCap = 'square',
 ): Annotation {
   if (!points.length || points.length > MAX_INK_POINTS || !Number.isFinite(strokeWidth) || strokeWidth < 1 || strokeWidth > 72) {
     throw new Error('線の点数または太さが不正です。')
@@ -21,7 +22,9 @@ export function createInkAnnotation(
     x: Math.min(page.width, Math.max(0, point.x)),
     y: Math.min(page.height, Math.max(0, point.y)),
   }))
-  const margin = strokeWidth / 2 + 2
+  // A diagonal square tip projects farther onto each axis than a round tip.
+  // Reserve that space for every new marker so changing its tip stays lossless.
+  const margin = (kind === 'marker' ? strokeWidth / Math.SQRT2 : strokeWidth / 2) + 2
   const left = Math.max(0, Math.min(...clamped.map(point => point.x)) - margin)
   const top = Math.max(0, Math.min(...clamped.map(point => point.y)) - margin)
   const right = Math.min(page.width, Math.max(...clamped.map(point => point.x)) + margin)
@@ -35,8 +38,20 @@ export function createInkAnnotation(
   return {
     id, pageId: page.id, type: kind, x, y, width, height,
     color, strokeWidth, aspectLocked: false,
+    ...(kind === 'marker' ? { markerCap } : {}),
     points: clamped.map(point => ({ x: (point.x - x) / width, y: (point.y - y) / height })),
   }
+}
+
+/** Rebox older round markers when changing to square tips without moving the path. */
+export function withMarkerCap(annotation: Annotation, page: Pick<PageInfo, 'id' | 'width' | 'height'>, markerCap: MarkerCap): Annotation {
+  if (annotation.type !== 'marker' || !annotation.points?.length) return annotation
+  const points = annotation.points.map(point => ({
+    x: annotation.x + point.x * annotation.width,
+    y: annotation.y + point.y * annotation.height,
+  }))
+  const resized = createInkAnnotation(annotation.id, page, 'marker', points, annotation.color ?? '#ffe14a', annotation.strokeWidth ?? 18, markerCap)
+  return { ...annotation, x: resized.x, y: resized.y, width: resized.width, height: resized.height, points: resized.points, markerCap }
 }
 
 function segmentDistance(point: InkPoint, a: InkPoint, b: InkPoint): number {

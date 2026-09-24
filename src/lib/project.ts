@@ -194,6 +194,15 @@ function validateProject(value: unknown): PdfProject {
       if (annotation.shapeKind !== 'rectangle' && annotation.shapeKind !== 'ellipse' && annotation.shapeKind !== 'triangle' && annotation.shapeKind !== 'line' && annotation.shapeKind !== 'double-line') fail('図形の種類が不正です。')
       result.shapeKind = annotation.shapeKind
     }
+    if (annotation.lineDirection !== undefined) {
+      if (type !== 'shape' || (result.shapeKind !== 'line' && result.shapeKind !== 'double-line') ||
+        (annotation.lineDirection !== 'horizontal' && annotation.lineDirection !== 'vertical' && annotation.lineDirection !== 'down' && annotation.lineDirection !== 'up')) fail('線の方向が不正です。')
+      result.lineDirection = annotation.lineDirection
+    }
+    if (annotation.markerCap !== undefined) {
+      if (type !== 'marker' || (annotation.markerCap !== 'round' && annotation.markerCap !== 'square')) fail('蛍光ペンの端の形が不正です。')
+      result.markerCap = annotation.markerCap
+    }
     if (annotation.fillColor !== undefined) result.fillColor = color(annotation.fillColor, '塗りつぶしの色', true)
     if (annotation.strokeColor !== undefined) result.strokeColor = color(annotation.strokeColor, '枠線の色', true)
     if (annotation.strokeWidth !== undefined) result.strokeWidth = finite(annotation.strokeWidth, type === 'pen' || type === 'marker' ? '手書き線の太さ' : '枠線の太さ', type === 'pen' || type === 'marker' ? 1 : 0, type === 'pen' || type === 'marker' ? 72 : 20)
@@ -220,7 +229,7 @@ function validateProject(value: unknown): PdfProject {
 export function encodeProject(project: PdfProject): Uint8Array {
   const clean = validateProject(project)
   const serialized = JSON.stringify({
-    app: 'LumaStudio PDF', version: 2,
+    app: 'LumaStudio PDF', version: 3,
     filename: clean.filename,
     original: encodeBase64(clean.original),
     pages: clean.pages,
@@ -238,7 +247,7 @@ export function decodeProject(bytes: Uint8Array): PdfProject {
   catch { fail('作業ファイルの文字形式またはJSON形式が不正です。') }
   const raw = object(parsed, '作業ファイル')
   if (raw.app !== 'LumaStudio PDF') fail('LumaStudio PDFの作業ファイルを選択してください。')
-  if (raw.version !== 1 && raw.version !== 2) fail('この作業ファイルのバージョンには対応していません。')
+  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) fail('この作業ファイルのバージョンには対応していません。')
   return validateProject({
     filename: raw.filename,
     original: decodeBase64(raw.original, MAX_PDF_BYTES, '元のPDF（50MBまで）'),

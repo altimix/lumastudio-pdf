@@ -34,11 +34,13 @@ function decodeRaw(value: unknown) {
 }
 
 describe('editable PDF project', () => {
-  it('writes version 2 so older apps cannot silently discard new styles and still reads version 1', () => {
+  it('writes version 3 so older apps cannot discard marker tips or line directions, and still reads versions 1 and 2', () => {
     const raw = rawExample()
-    expect(raw.version).toBe(2)
-    raw.version = 1
-    expect(decodeRaw(raw)).toEqual(example())
+    expect(raw.version).toBe(3)
+    for (const version of [1, 2]) {
+      raw.version = version
+      expect(decodeRaw(raw)).toEqual(example())
+    }
   })
   it('round-trips original PDF bytes, page order and rotation, annotation IDs, text, seals and images', async () => {
     const pdf = await PDFDocument.create()
@@ -101,7 +103,7 @@ describe('editable PDF project', () => {
   it('round-trips pen and marker paths and rejects points outside the page box', () => {
     const project = example()
     project.annotations.push({ id: 'pen', pageId: 'page-one', type: 'pen', x: 40, y: 50, width: 150, height: 30, color: '#123456', strokeWidth: 2, points: [{ x: 0.05, y: 0.2 }, { x: 0.9, y: 0.8 }] })
-    project.annotations.push({ id: 'marker', pageId: 'page-two', type: 'marker', x: 100, y: 200, width: 200, height: 25, color: '#ffe14a', strokeWidth: 18, points: [{ x: 0.05, y: 0.5 }, { x: 0.95, y: 0.5 }] })
+    project.annotations.push({ id: 'marker', pageId: 'page-two', type: 'marker', x: 100, y: 200, width: 200, height: 25, color: '#ffe14a', strokeWidth: 18, markerCap: 'square', points: [{ x: 0.05, y: 0.5 }, { x: 0.95, y: 0.5 }] })
     expect(decodeProject(encodeProject(project))).toEqual(project)
     const invalid = JSON.parse(new TextDecoder().decode(encodeProject(project)))
     invalid.annotations.at(-1).points[0].x = 1.1
@@ -109,6 +111,15 @@ describe('editable PDF project', () => {
     invalid.annotations.at(-1).points[0].x = 0.1
     invalid.annotations[0].points = [{ x: 0.5, y: 0.5 }]
     expect(() => decodeRaw(invalid)).toThrow('手書き線以外')
+  })
+
+  it('keeps the direction of dragged lines and old highlighter work files compatible', () => {
+    const project = example()
+    project.annotations.push({ id: 'line', pageId: 'page-one', type: 'shape', shapeKind: 'line', lineDirection: 'up', x: 40, y: 110, width: 130, height: 40 })
+    project.annotations.push({ id: 'old-marker', pageId: 'page-one', type: 'marker', x: 100, y: 200, width: 200, height: 25, color: '#ffe14a', strokeWidth: 18, points: [{ x: 0.05, y: 0.5 }, { x: 0.95, y: 0.5 }] })
+    const restored = decodeProject(encodeProject(project))
+    expect(restored.annotations.at(-2)?.lineDirection).toBe('up')
+    expect(restored.annotations.at(-1)).not.toHaveProperty('markerCap')
   })
 
   it('only saves allowed document fields and drops unrelated metadata on decode', () => {
@@ -135,7 +146,7 @@ describe('editable PDF project', () => {
 
   it.each([
     ['wrong app', (raw: any) => { raw.app = 'another editor' }, /LumaStudio/],
-    ['future version', (raw: any) => { raw.version = 3 }, /バージョン/],
+    ['future version', (raw: any) => { raw.version = 4 }, /バージョン/],
     ['missing version', (raw: any) => { delete raw.version }, /バージョン/],
     ['empty page list', (raw: any) => { raw.pages = [] }, /ページ数/],
     ['too many pages', (raw: any) => { raw.pages = Array(201).fill(raw.pages[0]) }, /ページ数/],
@@ -169,6 +180,8 @@ describe('editable PDF project', () => {
     ['nonboolean aspect lock', (raw: any) => { raw.annotations[0].aspectLocked = 'false' }, /縦横比ロック/],
     ['missing shape kind', (raw: any) => { raw.annotations[0].type = 'shape' }, /図形の種類/],
     ['unsupported shape kind', (raw: any) => { Object.assign(raw.annotations[0], { type: 'shape', shapeKind: 'svg' }) }, /図形の種類/],
+    ['invalid line direction', (raw: any) => { Object.assign(raw.annotations[0], { type: 'shape', shapeKind: 'line', lineDirection: 'backwards' }) }, /線の方向/],
+    ['invalid highlighter tip', (raw: any) => { raw.annotations[0].markerCap = 'round' }, /蛍光ペンの端/],
     ['fill CSS injection', (raw: any) => { raw.annotations[0].fillColor = 'url(https://example.test/fill)' }, /塗りつぶしの色/],
     ['stroke CSS injection', (raw: any) => { raw.annotations[0].strokeColor = 'var(--external)' }, /枠線の色/],
     ['negative stroke width', (raw: any) => { raw.annotations[0].strokeWidth = -1 }, /枠線の太さ/],

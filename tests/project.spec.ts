@@ -86,7 +86,7 @@ test('作業データから文字・印鑑・並び順・回転・削除状態�
   await expect(page.locator('.thumbnail-button')).toHaveCount(2);
   const saved = await saveProject(page, testInfo);
   expect(saved.data.app).toBe('LumaStudio PDF');
-  expect(saved.data.version).toBe(2);
+  expect(saved.data.version).toBe(3);
   expect(Object.keys(saved.data).sort()).toEqual(['annotations', 'app', 'filename', 'original', 'pages', 'version']);
   expect(saved.data.pages.map(item => item.sourceIndex)).toEqual([2, 1]);
   expect(saved.data.pages.map(item => item.rotation)).toEqual([0, 90]);

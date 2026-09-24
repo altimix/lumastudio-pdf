@@ -211,14 +211,14 @@ try {
   await clickMenu(application, 'ファイル', '作業データを保存…');
   await expect(page.getByRole('status').filter({ hasText: '編集を再開できる作業データを保存しました' })).toBeVisible();
   const savedProject = JSON.parse(await fs.readFile(projectPath, 'utf8'));
-  assert.equal(savedProject.version, 2);
+  assert.equal(savedProject.version, 3);
   assert.ok(savedProject.annotations.some(annotation => annotation.type === 'pen'));
-  const unsupportedVersion = Array.from(new TextEncoder().encode(JSON.stringify({ ...savedProject, version: 3 })));
+  const unsupportedVersion = Array.from(new TextEncoder().encode(JSON.stringify({ ...savedProject, version: 4 })));
   await assert.rejects(
     page.evaluate(data => window.lumaDesktop.saveProject(data, 'unsupported.lumapdf'), unsupportedVersion),
     /対応していない作業データです。/,
   );
-  console.log(JSON.stringify({ stage: 'project-v2-saved', platform: process.platform }));
+  console.log(JSON.stringify({ stage: 'project-v3-saved', platform: process.platform }));
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();

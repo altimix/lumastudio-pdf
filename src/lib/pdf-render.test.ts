@@ -62,15 +62,29 @@ describe('material rendering for preview and PDF export', () => {
     expect(context.stroke).not.toHaveBeenCalled()
   })
 
-  it('keeps a thick triangle outline inside a tiny shape instead of using an overflowing miter', async () => {
+  it('keeps a thick triangle outline recognizable inside a tiny shape', async () => {
     const { context } = drawingContext()
     await annotationToDataUrl({ ...base, shapeKind: 'triangle', width: 8, height: 12, strokeWidth: 20, strokeColor: '#008800', fillColor: '#ffffff' })
-    expect(context.lineWidth).toBe(8)
+    expect(context.lineWidth).toBe(4)
     expect(context.lineJoin).toBe('round')
-    expect(context.moveTo).toHaveBeenCalledWith(4, 4)
-    expect(context.lineTo.mock.calls).toEqual([[4, 8], [4, 8]])
+    expect(context.moveTo).toHaveBeenCalledWith(4, 2)
+    expect(context.lineTo.mock.calls).toEqual([[6, 10], [2, 10]])
     expect(context.fill).toHaveBeenCalledOnce()
     expect(context.stroke).toHaveBeenCalledOnce()
+  })
+
+  it('renders a nonzero rectangle, ellipse and line when their box is smaller than the requested stroke', async () => {
+    const rectangle = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'rectangle', width: 8, height: 8, strokeWidth: 8 })
+    expect(rectangle.lineWidth).toBe(4)
+    expect(rectangle.rect).toHaveBeenCalledWith(2, 2, 4, 4)
+    const ellipse = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'ellipse', width: 8, height: 8, strokeWidth: 8 })
+    expect(ellipse.ellipse).toHaveBeenCalledWith(4, 4, 2, 2, 0, 0, Math.PI * 2)
+    const line = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'line', width: 8, height: 8, strokeWidth: 8 })
+    expect(line.moveTo).toHaveBeenCalledWith(2, 4)
+    expect(line.lineTo).toHaveBeenCalledWith(6, 4)
   })
 
   it('draws a single and double cancellation line without filling their rectangles', async () => {
@@ -87,6 +101,16 @@ describe('material rendering for preview and PDF export', () => {
     expect(doubled.fill).not.toHaveBeenCalled()
   })
 
+  it('fits both strokes of a thick vertical double line inside its exported image', async () => {
+    const { context } = drawingContext()
+    await annotationToDataUrl({ ...base, shapeKind: 'double-line', lineDirection: 'vertical', width: 8, height: 100, strokeWidth: 8 })
+    expect(context.lineWidth).toBeCloseTo(8 / 3)
+    const centers = context.moveTo.mock.calls.map(([x]) => x as number).sort((a, b) => a - b)
+    expect(centers[0] - context.lineWidth / 2).toBeGreaterThanOrEqual(0)
+    expect(centers[1] + context.lineWidth / 2).toBeLessThanOrEqual(8)
+    expect(centers[1] - centers[0]).toBeGreaterThan(context.lineWidth)
+  })
+
   it('renders editable pen paths and a translucent highlighter from the same points used in the PDF', async () => {
     const pen = drawingContext().context
     await annotationToDataUrl({ ...base, type: 'pen', color: '#123456', strokeWidth: 3, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
@@ -99,6 +123,28 @@ describe('material rendering for preview and PDF export', () => {
     expect(marker.globalAlpha).toBe(0.35)
     expect(marker.strokeStyle).toBe('#ffe14a')
     expect(marker.lineWidth).toBe(18)
+  })
+
+  it('renders square highlighter tips for lines and dots without changing old round strokes', async () => {
+    const square = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', markerCap: 'square', strokeWidth: 18, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
+    expect(square.lineCap).toBe('square')
+    expect(square.lineJoin).toBe('bevel')
+    const dot = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', markerCap: 'square', strokeWidth: 18, points: [{ x: 0.5, y: 0.5 }] })
+    expect(dot.rect).toHaveBeenCalledWith(31, 11, 18, 18)
+    expect(dot.arc).not.toHaveBeenCalled()
+    const legacy = drawingContext().context
+    await annotationToDataUrl({ ...base, type: 'marker', strokeWidth: 18, points: [{ x: 0.5, y: 0.5 }] })
+    expect(legacy.lineCap).toBe('round')
+    expect(legacy.arc).toHaveBeenCalledOnce()
+  })
+
+  it('renders a dragged diagonal line across its saved box', async () => {
+    const { context } = drawingContext()
+    await annotationToDataUrl({ ...base, shapeKind: 'line', lineDirection: 'up', strokeWidth: 2 })
+    expect(context.moveTo).toHaveBeenCalledWith(1, 39)
+    expect(context.lineTo).toHaveBeenCalledWith(79, 1)
   })
 
   it('does not replace a zero outline width with its default', async () => {

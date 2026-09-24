@@ -1,6 +1,8 @@
 export type AnnotationType = 'text' | 'stamp' | 'image' | 'check' | 'shape' | 'pen' | 'marker'
 export type FontFamilyId = 'legacy' | 'noto-sans-jp' | 'noto-serif-jp' | 'm-plus-1' | 'biz-udgothic'
 export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'line' | 'double-line'
+export type MarkerCap = 'round' | 'square'
+export type LineDirection = 'horizontal' | 'vertical' | 'down' | 'up'
 
 /** Geometry uses points from the top-left of the original displayed PDF page. */
 export interface Annotation {
@@ -25,9 +27,13 @@ export interface Annotation {
   /** Imported seal image, distinct from a general image on the page. */
   stampSource?: true
   shapeKind?: ShapeKind
+  /** Omitted in older work files, whose lines were horizontal. */
+  lineDirection?: LineDirection
   strokeColor?: string
   fillColor?: string
   strokeWidth?: number
+  /** Omitted in older work files, whose highlighter tips were round. */
+  markerCap?: MarkerCap
   /** Pen and marker path coordinates, normalized within this annotation's box. */
   points?: { x: number; y: number }[]
 }
