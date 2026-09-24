@@ -82,6 +82,7 @@ try {
   guide.on('pageerror', error => errors.push(error.message));
   const guideResponse = await guide.goto(new URL('/guide/', origin).href, { waitUntil: 'networkidle' });
   assert.equal(guideResponse?.status(), 200);
+  assert.match((await guideResponse.headers())['cache-control'] || '', /(?:^|,)\s*no-transform(?:,|$)/i);
   assert.match(await guide.title(), /PDFに文字を記入して印鑑を押す方法/);
   assert.equal(await guide.locator('link[rel="canonical"]').getAttribute('href'), 'https://lumastudiopdf.altimix.jp/guide/');
   assert.equal(await guide.getByRole('heading', { level: 1 }).count(), 1);
