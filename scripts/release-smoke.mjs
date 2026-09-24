@@ -290,7 +290,7 @@ try {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, closePdfPath);
   const windowClosed = page.waitForEvent('close', { timeout: 15_000 });
-  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await application.evaluate(({ app }) => app.quit());
   await windowClosed;
   assert.equal((await PDFDocument.load(await fs.readFile(closePdfPath))).getPageCount(), 1);
   console.log(JSON.stringify({ stage: 'save-and-close-complete', platform: process.platform }));
