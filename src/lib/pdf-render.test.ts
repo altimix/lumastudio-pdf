@@ -62,15 +62,29 @@ describe('material rendering for preview and PDF export', () => {
     expect(context.stroke).not.toHaveBeenCalled()
   })
 
-  it('keeps a thick triangle outline inside a tiny shape instead of using an overflowing miter', async () => {
+  it('keeps a thick triangle outline recognizable inside a tiny shape', async () => {
     const { context } = drawingContext()
     await annotationToDataUrl({ ...base, shapeKind: 'triangle', width: 8, height: 12, strokeWidth: 20, strokeColor: '#008800', fillColor: '#ffffff' })
-    expect(context.lineWidth).toBe(8)
+    expect(context.lineWidth).toBe(4)
     expect(context.lineJoin).toBe('round')
-    expect(context.moveTo).toHaveBeenCalledWith(4, 4)
-    expect(context.lineTo.mock.calls).toEqual([[4, 8], [4, 8]])
+    expect(context.moveTo).toHaveBeenCalledWith(4, 2)
+    expect(context.lineTo.mock.calls).toEqual([[6, 10], [2, 10]])
     expect(context.fill).toHaveBeenCalledOnce()
     expect(context.stroke).toHaveBeenCalledOnce()
+  })
+
+  it('renders a nonzero rectangle, ellipse and line when their box is smaller than the requested stroke', async () => {
+    const rectangle = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'rectangle', width: 8, height: 8, strokeWidth: 8 })
+    expect(rectangle.lineWidth).toBe(4)
+    expect(rectangle.rect).toHaveBeenCalledWith(2, 2, 4, 4)
+    const ellipse = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'ellipse', width: 8, height: 8, strokeWidth: 8 })
+    expect(ellipse.ellipse).toHaveBeenCalledWith(4, 4, 2, 2, 0, 0, Math.PI * 2)
+    const line = drawingContext().context
+    await annotationToDataUrl({ ...base, shapeKind: 'line', width: 8, height: 8, strokeWidth: 8 })
+    expect(line.moveTo).toHaveBeenCalledWith(2, 4)
+    expect(line.lineTo).toHaveBeenCalledWith(6, 4)
   })
 
   it('draws a single and double cancellation line without filling their rectangles', async () => {

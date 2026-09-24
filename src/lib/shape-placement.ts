@@ -47,10 +47,10 @@ export function shapePlacementFromDrag(
   return { x, y, width, height, lineDirection }
 }
 
-/** Keep both strokes of a double line distinct and inside the annotation image. */
+/** Leave visible interior for small shapes and separate both double-line strokes. */
 export function shapeStrokeWidth(kind: ShapeKind | undefined, width: number, height: number, requested: number): number {
-  return Math.min(Math.max(0, requested), 20, width, height,
-    kind === 'double-line' ? Math.min(width, height) / 3 : Number.POSITIVE_INFINITY)
+  const shortSide = Math.min(width, height)
+  return Math.min(Math.max(0, requested), 20, kind === 'double-line' ? shortSide / 3 : shortSide / 2)
 }
 
 /** Match the editor preview and the raster image used in the exported PDF. */

@@ -33,7 +33,7 @@ describe('shape placement by dragging on the page', () => {
     const width = 8, height = 100
     const stroke = shapeStrokeWidth('double-line', width, height, 8)
     expect(stroke).toBeCloseTo(8 / 3)
-    expect(shapeStrokeWidth('line', width, height, 8)).toBe(8)
+    expect(shapeStrokeWidth('line', width, height, 8)).toBe(4)
     for (const direction of ['horizontal', 'vertical', 'down', 'up'] as const) {
       const segments = shapeLineSegments('double-line', width, height, stroke, direction)
       expect(segments).toHaveLength(2)
@@ -48,5 +48,15 @@ describe('shape placement by dragging on the page', () => {
         }
       }
     }
+  })
+
+  it('leaves nonzero interiors and line lengths when a tiny shape requests a thick outline', () => {
+    for (const kind of ['rectangle', 'ellipse', 'triangle', 'line'] as const) {
+      const stroke = shapeStrokeWidth(kind, 8, 8, 8)
+      expect(stroke).toBe(4)
+      expect(8 - stroke).toBeGreaterThan(0)
+    }
+    const [line] = shapeLineSegments('line', 8, 8, shapeStrokeWidth('line', 8, 8, 8))
+    expect(line.x2 - line.x1).toBeGreaterThan(0)
   })
 })
