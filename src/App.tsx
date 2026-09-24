@@ -102,6 +102,7 @@ import {
 } from "./components/PageContextMenu";
 
 type EditState = { pages: PageInfo[]; annotations: Annotation[] };
+type SaveOutcome = "saved" | "canceled" | "failed";
 type Placement = {
   pageId: string;
   type: "text" | "stamp";
@@ -946,8 +947,8 @@ export default function App() {
     setEdits(prepared);
     return prepared;
   };
-  const save = async (): Promise<boolean> => {
-    if (!original.current || busy || signedInput) return false;
+  const save = async (): Promise<SaveOutcome> => {
+    if (!original.current || busy || signedInput) return "failed";
     const current = flushInlineText();
     currentRef.current.busy = "PDFを書き出しています";
     setBusy("PDFを書き出しています");
@@ -961,7 +962,7 @@ export default function App() {
       );
       const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
       if (window.lumaDesktop) {
-        if (!(await window.lumaDesktop.savePdf(Array.from(data), name))) return false;
+        if (!(await window.lumaDesktop.savePdf(Array.from(data), name))) return "canceled";
       } else {
         const blob = new Blob([new Uint8Array(data)], {
           type: "application/pdf",
@@ -975,17 +976,17 @@ export default function App() {
       }
       setSavedState(JSON.stringify(prepared));
       notify("記入済みPDFを書き出しました。メールに添付して返送できます。");
-      return true;
+      return "saved";
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存できませんでした。");
-      return false;
+      return "failed";
     } finally {
       currentRef.current.busy = "";
       setBusy("");
     }
   };
-  const saveProject = async (): Promise<boolean> => {
-    if (!original.current || busy || signedInput) return false;
+  const saveProject = async (): Promise<SaveOutcome> => {
+    if (!original.current || busy || signedInput) return "failed";
     const current = flushInlineText();
     currentRef.current.busy = "作業データを保存しています";
     setBusy("作業データを保存しています");
@@ -1001,7 +1002,7 @@ export default function App() {
       const name = filename.replace(/\.pdf$/i, "") + ".lumapdf";
       if (window.lumaDesktop) {
         if (!(await window.lumaDesktop.saveProject(Array.from(bytes), name)))
-          return false;
+          return "canceled";
       } else {
         const url = URL.createObjectURL(
           new Blob([new Uint8Array(bytes)], { type: "application/json" }),
@@ -1015,12 +1016,12 @@ export default function App() {
       setSavedState(JSON.stringify(prepared));
       setProjectOpen(false);
       notify("編集を再開できる作業データを保存しました。");
-      return true;
+      return "saved";
     } catch (e) {
       const message = e instanceof Error ? e.message : "作業データを保存できませんでした。";
       setProjectError(message);
       setError(message);
-      return false;
+      return "failed";
     } finally {
       currentRef.current.busy = "";
       setBusy("");
@@ -1030,15 +1031,16 @@ export default function App() {
     const desktop = window.lumaDesktop;
     if (!desktop?.onSaveAndClose) return;
     return desktop.onSaveAndClose(async (format) => {
-      let saved = false;
+      let outcome: SaveOutcome = "failed";
       try {
-        saved = format === "project" ? await saveProject() : await save();
+        outcome = format === "project" ? await saveProject() : await save();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "保存できませんでした。");
       }
       try {
-        await desktop.finishCloseSave(saved);
-        if (!saved) notify("保存が完了しなかったため、アプリを閉じずに編集を続けます。");
+        await desktop.finishCloseSave(outcome === "saved");
+        if (outcome === "canceled") notify("保存を取り消したため、アプリを閉じずに編集を続けます。");
+        else if (outcome === "failed") setMessage("保存できなかったため、アプリを閉じずに編集を続けます。");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "終了処理を完了できませんでした。");
       }

@@ -103,6 +103,12 @@ try {
   await clickMenu(application, 'ヘルプ', '使い方マニュアル');
   const manual = page.getByRole('dialog', { name: '使い方マニュアル' });
   await expect(manual).toContainText('印鑑は名前で作るか画像を登録でき');
+  const closeHelp = manual.getByRole('button', { name: 'ヘルプを閉じる' });
+  await expect(closeHelp).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(manual.getByRole('button', { name: 'ショートカット一覧' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(closeHelp).toBeFocused();
   await manual.getByRole('button', { name: 'ショートカット一覧' }).click();
   const shortcutGuide = page.getByRole('dialog', { name: 'ショートカット一覧' });
   await expect(shortcutGuide.getByRole('row', { name: /完成したPDFを保存/ })).toContainText('Ctrl+S');
@@ -268,7 +274,7 @@ try {
     dialog.showSaveDialog = async () => ({ canceled: true });
     BrowserWindow.getAllWindows()[0].close();
   });
-  await expect(page.getByRole('status').filter({ hasText: '保存が完了しなかったため' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '保存を取り消したため' })).toBeVisible();
   await expect(page.locator('.unsaved')).toHaveCount(1);
   await application.evaluate(({ BrowserWindow, dialog }, filePath) => {
     dialog.showMessageBoxSync = () => 1;
@@ -276,6 +282,7 @@ try {
     BrowserWindow.getAllWindows()[0].close();
   }, path.join(userData, 'missing-directory', 'cannot-save.pdf'));
   await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('ENOENT');
   await expect(page.locator('.unsaved')).toHaveCount(1);
   const closePdfPath = path.join(userData, 'close-saved.pdf');
   await application.evaluate(({ dialog }, filePath) => {

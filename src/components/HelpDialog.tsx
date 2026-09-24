@@ -25,6 +25,7 @@ export function HelpDialog({ section, version, onSectionChange, onClose }: {
   onClose(): void;
 }) {
   const titleId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -44,7 +45,28 @@ export function HelpDialog({ section, version, onSectionChange, onClose }: {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <section className="modal help-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={event => event.stopPropagation()}>
+      <section
+        ref={dialogRef}
+        className="modal help-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onClick={event => event.stopPropagation()}
+        onKeyDown={event => {
+          if (event.key !== "Tab") return;
+          const controls = dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+          if (!controls?.length) { event.preventDefault(); return; }
+          const first = controls[0], last = controls[controls.length - 1];
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
+      >
         <div className="modal-heading">
           <div>
             <span className="field-eyebrow">LumaStudio PDF ヘルプ</span>
