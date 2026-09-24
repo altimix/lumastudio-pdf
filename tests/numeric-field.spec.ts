@@ -82,8 +82,43 @@ test('数値を空欄にして置き換え、確定時だけ範囲を適用し�
   await expect(size).toHaveValue('96');
 });
 
+test('新しい文字ボックスは縦横比を固定せず、幅と高さを別々に変えて再開できる', async ({ page }, testInfo) => {
+  const { annotation } = await openText(page);
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  const width = page.getByRole('spinbutton', { name: '要素の幅', exact: true });
+  const height = page.getByRole('spinbutton', { name: '要素の高さ', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await expect(annotation.getByTestId('resize-e')).toBeVisible();
+  await expect(annotation.getByTestId('resize-s')).toBeVisible();
+  const initial = (await projectData(page, testInfo)).annotations[0];
+
+  await width.fill(String(initial.width + 40));
+  await width.press('Enter');
+  const widened = (await projectData(page, testInfo)).annotations[0];
+  expect(widened).toMatchObject({ aspectLocked: false, height: initial.height, fontSize: initial.fontSize });
+  expect(widened.width).toBeCloseTo(initial.width + 40, 1);
+
+  await height.fill(String(initial.height + 20));
+  await height.press('Enter');
+  const resized = (await projectData(page, testInfo)).annotations[0];
+  expect(resized.width).toBeCloseTo(widened.width, 1);
+  expect(resized.height).toBeCloseTo(initial.height + 20, 1);
+  expect(resized.fontSize).toBe(initial.fontSize);
+
+  await page.reload();
+  await page.getByTestId('project-input').setInputFiles(testInfo.outputPath('numeric-fields.lumapdf'));
+  await annotation.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  expect(Number(await width.inputValue())).toBeCloseTo(resized.width, 1);
+  expect(Number(await height.inputValue())).toBeCloseTo(resized.height, 1);
+});
+
 test('文字の縦横比ロック中は固定パディングを除いて幅と高さを数値変更する', async ({ page }, testInfo) => {
   const { size } = await openText(page);
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
   await size.fill('13');
   await size.press('Enter');
   const source = (await projectData(page, testInfo)).annotations[0];

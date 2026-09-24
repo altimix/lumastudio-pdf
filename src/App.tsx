@@ -1444,7 +1444,7 @@ export default function App() {
       y: tool === "shape" && shapePlacement ? shapePlacement.y : Math.max(0, Math.min(page.height - height, y - (centerY ? height / 2 : 0))),
       width,
       height,
-      aspectLocked: tool !== "shape",
+      aspectLocked: tool !== "shape" && tool !== "text",
       text: tool === "stamp" ? stamp.name : tool === "text" ? text : undefined,
       fontSize,
       ...(tool === "text"

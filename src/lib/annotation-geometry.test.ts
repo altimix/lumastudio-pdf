@@ -138,7 +138,8 @@ describe("corner resize", () => {
     const image = { ...annotation, aspectLocked: false };
     expect(isAspectLocked(annotation)).toBe(true);
     expect(resizeAnnotation(image, 'se', { x: 50, y: 10 }, page)).toMatchObject({ width: 170, height: 70 });
-    const text = { ...annotation, type: 'text' as const, fontSize: 11, aspectLocked: false };
+    const text = { ...annotation, type: 'text' as const, fontSize: 11 };
+    expect(isAspectLocked(text)).toBe(false);
     expect(resizeAnnotation(text, 'e', { x: 40, y: 0 }, page)).toMatchObject({ width: 160, height: 60 });
     expect(resizeAnnotation(text, 'e', { x: 40, y: 0 }, page)).not.toHaveProperty('fontSize');
   });
@@ -186,7 +187,7 @@ describe("corner resize", () => {
   });
 
   it("scales text content and font while preserving fixed padding and font limits", () => {
-    const text = { ...annotation, type: "text" as const, fontSize: 12 };
+    const text = { ...annotation, type: "text" as const, fontSize: 12, aspectLocked: true };
     expect(resizeAnnotation(text, "se", { x: 116, y: 54 }, page)).toMatchObject(
       { width: 236, height: 114, fontSize: 24 },
     );
@@ -203,6 +204,7 @@ describe("corner resize", () => {
     const text = {
       ...annotation,
       type: "text" as const,
+      aspectLocked: true,
       width: 240,
       height: 24.2,
       fontSize: 13,
@@ -229,6 +231,7 @@ describe("corner resize", () => {
       const text = {
         ...annotation,
         type: "text" as const,
+        aspectLocked: true,
         fontSize: 13,
         width: 240,
         height: 24.2,
@@ -264,6 +267,7 @@ describe("corner resize", () => {
       const text = {
         ...annotation,
         type: "text" as const,
+        aspectLocked: true,
         fontSize: 13,
         x: 15,
         y: 20,
@@ -298,6 +302,7 @@ describe("corner resize", () => {
     const text = {
       ...annotation,
       type: "text" as const,
+      aspectLocked: true,
       width: 4,
       height: 6,
       fontSize: 6,

@@ -232,6 +232,9 @@ test('長い日本語を半分に縮小しても末尾の文字を欠かさずPD
   await input.fill(text);
   await input.press('ControlOrMeta+Enter');
   const annotation = page.getByRole('button', { name: `文字: ${text}`, exact: true });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await lock.click();
   const before = await dimensions(annotation);
   expect(before.width / 0.85).toBeCloseTo(240, 1);
   const handle = (await annotation.getByTestId('resize-se').boundingBox())!;
@@ -281,6 +284,10 @@ test('文字を角から拡大して一度で元に戻せ、矢印キーで微�
   await page.getByLabel('記入する文字', { exact: true }).fill('大きさを変更');
   await placeAt(page, 50, 160);
   const annotation = page.getByRole('button', { name: '文字: 大きさを変更', exact: true });
+  const lock = page.getByRole('button', { name: '縦横比をロック', exact: true });
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
   const resized = await growSelected(page, annotation, 1.4);
   const fontSize = Number(await page.getByLabel('文字サイズ', { exact: true }).inputValue());
   expect(fontSize).toBeGreaterThan(11);
