@@ -10,6 +10,7 @@
   cursor: grabbing;
 }
 .annotation { z-index: 2; }
+.annotation.selected { z-index: 3; }
 .annotation.editing {
   visibility: hidden;
 }

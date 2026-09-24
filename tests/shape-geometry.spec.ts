@@ -326,7 +326,13 @@ test('既存の図形に重ねてドラッグ・クリック配置し、選択�
   const box = await surface.boundingBox();
   if (!box) throw new Error('PDFが表示されていません');
   await page.mouse.click(box.x + 90 * scale, box.y + 125 * scale);
-  await expect(page.locator('.annotation').first()).toHaveClass(/selected/);
+  const first = page.locator('.annotation').first();
+  await expect(first).toHaveClass(/selected/);
+  const beforeResize = await geometry(first);
+  await dragHandle(page, first, 'e', 20 * scale, 0);
+  expect((await geometry(first)).width).toBeGreaterThan(beforeResize.width + 15 * scale);
+  const resized = await saveProject(page, info, 'overlapping-shapes-resized.lumapdf');
+  expect(resized.data.annotations[0].width).toBeCloseTo(180, 0);
   await expect(page.locator('.annotation')).toHaveCount(3);
 });
 
