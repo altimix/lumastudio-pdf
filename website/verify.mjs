@@ -46,6 +46,7 @@ try {
   assert.match(await desktop.locator('.faq-list').innerText(), /ショートカット一覧/);
   assert.equal(await desktop.locator('.site-footer a[href="/privacy/"]').count(), 1);
   assert.equal(await desktop.locator('img:not([alt])').count(), 0);
+  assert.match(await desktop.locator('.workspace-frame img').getAttribute('alt') || '', /文字ボックスの縦横比ロックを解除/);
   for (const selector of ['.workspace-frame img', '.developer-photo img']) {
     const image = desktop.locator(selector);
     await image.scrollIntoViewIfNeeded();
@@ -94,6 +95,7 @@ try {
   assert.match(await guide.locator('main').innerText(), /図形と蛍光ペンを使う/);
   assert.match(await guide.locator('main').innerText(), /角（初期値）または丸/);
   assert.match(await guide.locator('main').innerText(), /縦横比のロックが初期オフ/);
+  assert.match(await guide.locator('.guide-shot img').getAttribute('alt') || '', /文字ボックスの縦横比ロックを解除/);
   assert.equal(await guide.locator('a[href="/#download"]').count() > 0, true);
   await guide.screenshot({ path: 'test-results/website/guide-desktop.png', fullPage: true });
   const guideMobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
