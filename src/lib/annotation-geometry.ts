@@ -5,7 +5,7 @@ export type ResizeHandle = ResizeCorner | "n" | "e" | "s" | "w";
 export type Point = { x: number; y: number };
 
 export function isAspectLocked(annotation: Pick<Annotation, 'type' | 'aspectLocked'>): boolean {
-  return annotation.aspectLocked ?? (annotation.type !== 'shape' && annotation.type !== 'text');
+  return annotation.aspectLocked ?? annotation.type !== 'shape';
 }
 
 /** Convert the rotated page's bounding box back into original PDF points. */

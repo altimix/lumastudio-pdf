@@ -138,7 +138,7 @@ describe("corner resize", () => {
     const image = { ...annotation, aspectLocked: false };
     expect(isAspectLocked(annotation)).toBe(true);
     expect(resizeAnnotation(image, 'se', { x: 50, y: 10 }, page)).toMatchObject({ width: 170, height: 70 });
-    const text = { ...annotation, type: 'text' as const, fontSize: 11 };
+    const text = { ...annotation, type: 'text' as const, fontSize: 11, aspectLocked: false };
     expect(isAspectLocked(text)).toBe(false);
     expect(resizeAnnotation(text, 'e', { x: 40, y: 0 }, page)).toMatchObject({ width: 160, height: 60 });
     expect(resizeAnnotation(text, 'e', { x: 40, y: 0 }, page)).not.toHaveProperty('fontSize');

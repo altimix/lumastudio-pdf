@@ -569,6 +569,16 @@ export function PdfPage({
           ),
         };
     const next = { ...annotation, ...patch };
+    if (current.corner && next.type === "text" && !isAspectLocked(next)) {
+      const height = Math.min(page.height, Math.max(next.height, measureTextHeight(next)));
+      if (height !== next.height) {
+        const bottom = next.y + next.height;
+        next.y = current.corner.includes("n")
+          ? Math.max(0, bottom - height)
+          : Math.min(next.y, page.height - height);
+        next.height = height;
+      }
+    }
     previewRef.current = next;
     setPreview(next);
   };
