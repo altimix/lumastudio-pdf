@@ -30,7 +30,9 @@ export function shapePlacementFromDrag(
   const dx = last.x - first.x
   const dy = last.y - first.y
   const lineShape = kind === 'line' || kind === 'double-line'
-  const lineDirection: LineDirection = Math.abs(dx) < 4 ? 'vertical'
+  const lineDirection: LineDirection = Math.abs(dx) < 4 && Math.abs(dy) < 4
+    ? Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical'
+    : Math.abs(dx) < 4 ? 'vertical'
     : Math.abs(dy) < 4 ? 'horizontal'
       : dx * dy > 0 ? 'down' : 'up'
   const x = lineShape && lineDirection === 'vertical'
@@ -43,6 +45,12 @@ export function shapePlacementFromDrag(
   const height = Math.min(page.height - y, Math.max(minimumHeight, Math.abs(dy)))
   if (!lineShape) return { x, y, width, height }
   return { x, y, width, height, lineDirection }
+}
+
+/** Keep both strokes of a double line distinct and inside the annotation image. */
+export function shapeStrokeWidth(kind: ShapeKind | undefined, width: number, height: number, requested: number): number {
+  return Math.min(Math.max(0, requested), 20, width, height,
+    kind === 'double-line' ? Math.min(width, height) / 3 : Number.POSITIVE_INFINITY)
 }
 
 /** Match the editor preview and the raster image used in the exported PDF. */

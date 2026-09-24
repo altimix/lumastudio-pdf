@@ -87,6 +87,16 @@ describe('material rendering for preview and PDF export', () => {
     expect(doubled.fill).not.toHaveBeenCalled()
   })
 
+  it('fits both strokes of a thick vertical double line inside its exported image', async () => {
+    const { context } = drawingContext()
+    await annotationToDataUrl({ ...base, shapeKind: 'double-line', lineDirection: 'vertical', width: 8, height: 100, strokeWidth: 8 })
+    expect(context.lineWidth).toBeCloseTo(8 / 3)
+    const centers = context.moveTo.mock.calls.map(([x]) => x as number).sort((a, b) => a - b)
+    expect(centers[0] - context.lineWidth / 2).toBeGreaterThanOrEqual(0)
+    expect(centers[1] + context.lineWidth / 2).toBeLessThanOrEqual(8)
+    expect(centers[1] - centers[0]).toBeGreaterThan(context.lineWidth)
+  })
+
   it('renders editable pen paths and a translucent highlighter from the same points used in the PDF', async () => {
     const pen = drawingContext().context
     await annotationToDataUrl({ ...base, type: 'pen', color: '#123456', strokeWidth: 3, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })

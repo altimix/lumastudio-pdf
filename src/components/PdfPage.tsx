@@ -23,7 +23,7 @@ import {
   type ResizeHandle,
 } from "../lib/annotation-geometry";
 import { inkStrokeIntersectsSegment, MAX_INK_POINTS, type InkKind, type InkPoint } from "../lib/ink";
-import { shapeLineSegments, shapePlacementFromDrag, type ShapePlacement } from "../lib/shape-placement";
+import { shapeLineSegments, shapePlacementFromDrag, shapeStrokeWidth, type ShapePlacement } from "../lib/shape-placement";
 import "./PdfPage.css";
 
 export function AnnotationVisual({
@@ -958,7 +958,8 @@ export function PdfPage({
               const { width, height } = shapePreview;
               const lineShape = shapeStyle.shapeKind === 'line' || shapeStyle.shapeKind === 'double-line';
               const strokeColor = lineShape && shapeStyle.strokeColor === 'none' ? '#000000' : shapeStyle.strokeColor ?? '#000000';
-              const strokeWidth = strokeColor === 'none' ? 0 : Math.min(Math.max(0, lineShape ? Math.max(0.5, shapeStyle.strokeWidth ?? 1.5) : shapeStyle.strokeWidth ?? 1.5), 20, width, height);
+              const requestedStroke = lineShape ? Math.max(0.5, shapeStyle.strokeWidth ?? 1.5) : shapeStyle.strokeWidth ?? 1.5;
+              const strokeWidth = strokeColor === 'none' ? 0 : shapeStrokeWidth(shapeStyle.shapeKind, width, height, requestedStroke);
               const inset = strokeWidth / 2;
               return <svg
                 className="shape-placement-preview"

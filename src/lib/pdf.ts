@@ -3,7 +3,7 @@ import type { PDFObject } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { Annotation, PageInfo } from './types'
-import { shapeLineSegments } from './shape-placement'
+import { shapeLineSegments, shapeStrokeWidth } from './shape-placement'
 import { ensureTextFont, fontCssFamily, resolveTextGeometry, textFontCss, underlineOffset, wrapTextLines } from './fonts'
 
 export type { Annotation, PageInfo } from './types'
@@ -235,7 +235,7 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
     const strokeColor = lineShape && annotation.strokeColor === 'none' ? '#000000' : annotation.strokeColor ?? '#000000'
     const fillColor = lineShape ? 'none' : annotation.fillColor ?? 'none'
     const requestedStroke = lineShape ? Math.max(0.5, annotation.strokeWidth ?? 1.5) : annotation.strokeWidth ?? 1.5
-    const strokeWidth = strokeColor === 'none' ? 0 : Math.min(Math.max(0, requestedStroke), 20, width, height)
+    const strokeWidth = strokeColor === 'none' ? 0 : shapeStrokeWidth(annotation.shapeKind, width, height, requestedStroke)
     const inset = strokeWidth / 2
     context.beginPath()
     if (lineShape) {
