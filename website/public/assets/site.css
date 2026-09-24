@@ -155,6 +155,17 @@ button, summary { font: inherit; }
 .privacy-page code { padding: 2px 5px; background: var(--wash); }
 .privacy-more { margin: 15px 0 0; font-size: 13px; }
 .privacy-page a { color: var(--green); }
+.guide-breadcrumb { display: flex; align-items: center; gap: 9px; margin-bottom: 35px; color: var(--muted); font-size: 12px; }
+.guide-home-link { display: inline-flex; margin-top: 28px; }
+.guide-page .privacy-lead { margin-bottom: 26px; }
+.guide-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 15px 24px; margin-bottom: 48px; }
+.guide-actions .button-primary { color: #fff; }
+.guide-shot { margin: 0 0 40px; }
+.guide-shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 38px rgba(31, 56, 48, .08); }
+.guide-shot figcaption { margin-top: 10px; color: var(--muted); font-size: 12px; }
+.privacy-page section .guide-note { margin-top: 13px; padding: 13px 15px; border-left: 3px solid var(--green); background: var(--wash); }
+.guide-end { margin: 30px 0 0; }
+.guide-end .button { color: #fff; }
 
 .site-footer { color: #dfece3; background: #173b32; }
 .footer-main { display: flex; justify-content: space-between; gap: 36px; padding-block: 49px 47px; }
@@ -246,6 +257,8 @@ button, summary { font: inherit; }
   .download-option { min-height: 285px; padding: 25px 22px; }
   .download-title h3 { font-size: 27px; }
   .faq-list summary { font-size: 14px; }
+  .guide-actions .button, .guide-end .button { width: 100%; }
+  .guide-page h1 { font-size: clamp(30px, 8.5vw, 39px); line-height: 1.42; }
   .footer-main { flex-direction: column; padding-block: 38px; }
   .contact-actions .button { width: 100%; }
   .footer-main nav { justify-content: flex-start; }

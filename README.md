@@ -4,6 +4,8 @@
 
 公式サイト: [lumastudiopdf.altimix.jp](https://lumastudiopdf.altimix.jp/)
 
+PDFへの文字入力・押印・保存の手順は[画像付きの使い方ページ](https://lumastudiopdf.altimix.jp/guide/)で確認できます。
+
 通常編集とAI実行時のデータの扱いは[公式サイトの説明](https://lumastudiopdf.altimix.jp/privacy/)を参照してください。
 
 使い方などのお問い合わせは [株式会社Altimixの共通窓口](https://altimix.co.jp/contact/) へ。不具合や機能提案は [GitHub Issues](https://github.com/altimix/lumastudio-pdf/issues) でも受け付けます。公開Issueに実際のPDF、印影、秘密鍵、APIキーを添付しないでください。
