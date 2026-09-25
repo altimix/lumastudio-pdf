@@ -24,20 +24,21 @@ try {
   assert.equal(await desktop.locator('meta[name="robots"][content*="noindex"]').count(), 0);
   assert.equal(await desktop.getByRole('heading', { level: 1 }).count(), 1);
   assert.match(await desktop.getByRole('heading', { level: 1 }).innerText(), /届いたPDFを、\s*返せる書類に/);
-  assert.match(await desktop.locator('.window-topline').innerText(), /v1\.0\.5/);
-  assert.match(await desktop.locator('#workspace-caption').innerText(), /v1\.0\.5/);
+  assert.match(await desktop.locator('.window-topline').innerText(), /v1\.0\.6/);
+  assert.match(await desktop.locator('#workspace-caption').innerText(), /v1\.0\.6/);
   assert.doesNotMatch(await desktop.locator('#workspace-caption').innerText(), /最新版と一部異なります/);
   assert.equal(await desktop.locator('link[rel="canonical"]').getAttribute('href'), 'https://lumastudiopdf.altimix.jp/');
   assert.equal(await desktop.locator('a.guide-home-link').getAttribute('href'), '/guide/');
   const structured = JSON.parse(await desktop.locator('script[type="application/ld+json"]').textContent() || '{}');
   assert.equal(structured['@type'], 'SoftwareApplication');
   assert.equal(structured.author?.name, '安藤昇');
-  assert.equal(structured.softwareVersion, '1.0.5');
+  assert.equal(structured.softwareVersion, '1.0.6');
   assert.equal(structured.publisher?.name, '株式会社Altimix');
   assert.equal(await desktop.locator('.contact-actions a').first().getAttribute('href'), 'https://altimix.co.jp/contact/');
   assert.equal(await desktop.locator('.contact-actions a').last().getAttribute('href'), 'https://github.com/altimix/lumastudio-pdf/issues');
   assert.match(await desktop.locator('.feature-list').innerText(), /蛍光ペンは端を角（初期値）・丸から選べます/);
   assert.match(await desktop.locator('.feature-list').innerText(), /文字ボックスは縦横比のロックが初期オフ/);
+  assert.match(await desktop.locator('.feature-list').innerText(), /PDFを左のサムネイル一覧へドロップ/);
   assert.match(await desktop.locator('.feature-list').innerText(), /長方形、楕円・円、三角形、線、二重線はドラッグした大きさで配置/);
   assert.match(await desktop.locator('.feature-list').innerText(), /日本語メニュー/);
   assert.match(await desktop.locator('.feature-list').innerText(), /クリックした位置を中心に配置/);
@@ -46,17 +47,17 @@ try {
   assert.match(await desktop.locator('.faq-list').innerText(), /ショートカット一覧/);
   assert.equal(await desktop.locator('.site-footer a[href="/privacy/"]').count(), 1);
   assert.equal(await desktop.locator('img:not([alt])').count(), 0);
-  assert.match(await desktop.locator('.workspace-frame img').getAttribute('alt') || '', /文字ボックスの縦横比ロックを解除/);
+  assert.match(await desktop.locator('.workspace-frame img').getAttribute('alt') || '', /添付PDFの挿入位置を緑の線で示した/);
   for (const selector of ['.workspace-frame img', '.developer-photo img']) {
     const image = desktop.locator(selector);
     await image.scrollIntoViewIfNeeded();
     assert.equal(await image.evaluate(async element => { await element.decode(); return element.naturalWidth > 100; }), true, `${selector} did not load`);
   }
-  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v1.0.5/';
+  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v1.0.6/';
   const downloads = {
-    'windows-portable': 'LumaStudio-PDF-1.0.5-windows-x64-portable.exe',
-    'mac-arm64': 'LumaStudio-PDF-1.0.5-macos-arm64.zip',
-    'mac-x64': 'LumaStudio-PDF-1.0.5-macos-x64.zip',
+    'windows-portable': 'LumaStudio-PDF-1.0.6-windows-x64-portable.exe',
+    'mac-arm64': 'LumaStudio-PDF-1.0.6-macos-arm64.zip',
+    'mac-x64': 'LumaStudio-PDF-1.0.6-macos-x64.zip',
     'mac-guide': 'README-Mac.txt',
     checksums: 'SHA256SUMS.txt',
     license: 'LICENSE.txt',
@@ -95,7 +96,8 @@ try {
   assert.match(await guide.locator('main').innerText(), /図形と蛍光ペンを使う/);
   assert.match(await guide.locator('main').innerText(), /角（初期値）または丸/);
   assert.match(await guide.locator('main').innerText(), /縦横比のロックが初期オフ/);
-  assert.match(await guide.locator('.guide-shot img').getAttribute('alt') || '', /文字ボックスの縦横比ロックを解除/);
+  assert.match(await guide.locator('main').innerText(), /緑の線が示す位置に/);
+  assert.match(await guide.locator('.guide-shot img').getAttribute('alt') || '', /添付PDFの挿入位置を左の一覧で示した/);
   assert.equal(await guide.locator('a[href="/#download"]').count() > 0, true);
   await guide.screenshot({ path: 'test-results/website/guide-desktop.png', fullPage: true });
   const guideMobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -106,7 +108,7 @@ try {
 
   for (const [path, expected] of [
     ['/robots.txt', 200], ['/sitemap.xml', 200], ['/guide/', 200], ['/privacy/', 200], ['/assets/favicon.svg', 200],
-    ['/assets/editor-v1.0.5.png', 200], ['/assets/ando2026.png', 200], ['/missing-page', 404],
+    ['/assets/editor-v1.0.6.png', 200], ['/assets/ando2026.png', 200], ['/missing-page', 404],
   ]) {
     const result = await fetch(new URL(path, origin));
     assert.equal(result.status, expected, path);
