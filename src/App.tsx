@@ -884,54 +884,94 @@ export default function App() {
       setBusy("");
     }
   };
+  const applyMergedFiles = async (
+    files: { name: string; bytes: Uint8Array }[],
+    current: EditState,
+    insertion: number,
+  ) => {
+    const result = await appendPdfSources(original.current, files);
+    const loaded = await loadPdf(result.bytes);
+    const additions = loaded.pages
+      .slice(result.originalPageCount)
+      .map((p, i) => ({ ...p, ...result.addedPages[i] }));
+    const position = Math.max(0, Math.min(current.pages.length, insertion));
+    const pages = [...current.pages];
+    pages.splice(position, 0, ...additions);
+    const next: EditState = { pages, annotations: current.annotations };
+    const previous = pdf;
+    original.current = result.bytes;
+    setPdf(loaded.document);
+    setSignedInput(false);
+    if (previous) recordEdit(next);
+    else {
+      history.current = [next];
+      cursor.current = 0;
+      setEdits(next);
+      setSavedState("");
+    }
+    if (!previous) setFilename("結合した書類.pdf");
+    else if (!filename.includes("_結合"))
+      setFilename(filename.replace(/\.pdf$/i, "") + "_結合.pdf");
+    setActiveId(additions[0].id);
+    setSelectedId(null);
+    setTool("select");
+    setShowPages(true);
+    setMergeOpen(false);
+    setMergeFiles([]);
+    setAiResult(null);
+    closePageMenu();
+    notify(
+      `${files.length}個のPDFを${position + 1}ページ目から追加し、合計${next.pages.length}ページになりました。「PDFを保存」で書き出せます。`,
+    );
+    if (previous) void previous.loadingTask.destroy();
+  };
   const mergeDocuments = async () => {
     if (busy || signedInput || !mergeFiles.length) return;
     const current = flushInlineText();
     setBusy("PDFを結合しています");
     setMergeError("");
     try {
-      const result = await appendPdfSources(original.current, mergeFiles);
-      const loaded = await loadPdf(result.bytes);
-      const additions = loaded.pages
-        .slice(result.originalPageCount)
-        .map((p, i) => ({ ...p, ...result.addedPages[i] }));
-      const next: EditState = {
-        pages: [...current.pages, ...additions],
-        annotations: current.annotations,
-      };
-      const previous = pdf;
-      original.current = result.bytes;
-      setPdf(loaded.document);
-      setSignedInput(false);
-      if (previous) recordEdit(next);
-      else {
-        history.current = [next];
-        cursor.current = 0;
-        setEdits(next);
-        setSavedState("");
-      }
-      if (!previous) setFilename("結合した書類.pdf");
-      else if (!filename.includes("_結合"))
-        setFilename(filename.replace(/\.pdf$/i, "") + "_結合.pdf");
-      setActiveId(additions[0].id);
-      setSelectedId(null);
-      setTool("select");
-      setShowPages(true);
-      setMergeOpen(false);
-      setMergeFiles([]);
-      setAiResult(null);
-      closePageMenu();
-      notify(
-        `${mergeFiles.length}個のPDFを追加し、合計${next.pages.length}ページになりました。「PDFを保存」で書き出せます。`,
-      );
-      if (previous) void previous.loadingTask.destroy();
+      await applyMergedFiles(mergeFiles, current, current.pages.length);
     } catch (e) {
-      setMergeError(
-        e instanceof Error ? e.message : "PDFを結合できませんでした。",
-      );
+      setMergeError(e instanceof Error ? e.message : "PDFを結合できませんでした。");
     } finally {
       setBusy("");
     }
+  };
+  const mergeDroppedFiles = async (files: File[], insertion: number) => {
+    if (busy || signedInput || !pdf || !files.length) return;
+    setError("");
+    try {
+      if (files.length > 30) throw new Error("一度に結合できるPDFは30個までです。");
+      if (files.some((file) => !file.name.toLowerCase().endsWith(".pdf")))
+        throw new Error("結合するファイルはPDFだけを選んでください。");
+      if (files.reduce((total, file) => total + file.size, original.current?.byteLength ?? 0) > 50 * 1024 * 1024)
+        throw new Error("開いているPDFと追加するPDFの合計は50MBまでです。");
+      const current = flushInlineText();
+      setBusy("PDFを結合しています");
+      const incoming = await Promise.all(files.map(async (file) => ({
+        name: file.name,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      })));
+      await applyMergedFiles(incoming, current, insertion);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "PDFを結合できませんでした。");
+    } finally {
+      setBusy("");
+    }
+  };
+  const sidebarDropTarget = (panel: HTMLElement, clientY: number) => {
+    const entries = Array.from(panel.querySelectorAll<HTMLElement>(".thumbnail-entry"));
+    if (!entries.length) return null;
+    for (let index = 0; index < entries.length; index++) {
+      const rect = entries[index].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2)
+        return { pageId: entries[index].dataset.pageEntry!, after: false, insertion: index };
+      if (clientY <= rect.bottom)
+        return { pageId: entries[index].dataset.pageEntry!, after: true, insertion: index + 1 };
+    }
+    const last = entries[entries.length - 1];
+    return { pageId: last.dataset.pageEntry!, after: true, insertion: entries.length };
   };
   const sample = async () => {
     try {
@@ -1835,9 +1875,13 @@ export default function App() {
     <>
       <div
         className="app-shell"
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (Array.from(e.dataTransfer.types).includes("Files")) setPageDrop(null);
+        }}
         onDrop={(e) => {
           e.preventDefault();
+          setPageDrop(null);
           const files = Array.from(e.dataTransfer.files);
           if (files.length > 1) void readMergeFiles(files);
           else if (files[0]?.name.toLowerCase().endsWith(".lumapdf"))
@@ -2020,7 +2064,42 @@ export default function App() {
         </div>
         <div className={`editor-layout ${!showPages ? "pages-hidden" : ""} ${!showProperties ? "properties-hidden" : ""}`}>
           {showPages && (
-            <aside className="pages-panel">
+            <aside
+              className="pages-panel"
+              onDragOver={(event) => {
+                if (!pdf || !Array.from(event.dataTransfer.types).includes("Files")) return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (busy || signedInput) {
+                  event.dataTransfer.dropEffect = "none";
+                  setPageDrop(null);
+                  return;
+                }
+                event.dataTransfer.dropEffect = "copy";
+                const target = sidebarDropTarget(event.currentTarget, event.clientY);
+                setPageDrop(target && { pageId: target.pageId, after: target.after });
+              }}
+              onDragLeave={(event) => {
+                if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                if (event.clientX < rect.left || event.clientX > rect.right ||
+                    event.clientY < rect.top || event.clientY > rect.bottom)
+                  setPageDrop(null);
+              }}
+              onDrop={(event) => {
+                if (!pdf || !Array.from(event.dataTransfer.types).includes("Files")) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const target = sidebarDropTarget(event.currentTarget, event.clientY);
+                setPageDrop(null);
+                if (signedInput) {
+                  setError("署名付きPDFは閲覧専用です。別のPDFを結合できません。");
+                  return;
+                }
+                if (!busy && target)
+                  void mergeDroppedFiles(Array.from(event.dataTransfer.files), target.insertion);
+              }}
+            >
               <div className="panel-title">
                 <h2>
                   ページ <span>{edits.pages.length || ""}</span>
@@ -2036,7 +2115,9 @@ export default function App() {
               {pdf ? (
                 <>
                   <p className="pages-help">
-                    ドラッグで順番を変更
+                    PDFをドロップして結合
+                    <br />
+                    ページをドラッグして順番を変更
                     <br />
                     右クリックでページを削除
                   </p>
@@ -2059,6 +2140,7 @@ export default function App() {
                           });
                         }}
                         onDragLeave={(event) => {
+                          if (!draggedPage.current) return;
                           if (
                             !(event.relatedTarget instanceof Node) ||
                             !event.currentTarget.contains(event.relatedTarget)
