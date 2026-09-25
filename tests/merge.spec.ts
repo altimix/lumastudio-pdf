@@ -34,6 +34,27 @@ async function merge(page: Page, files: Fixture[]) {
   await expect(dialog).not.toBeVisible();
 }
 
+async function dropPdfOnSidebar(page: Page, files: Fixture[], entryIndex: number, after = false, allowed = true) {
+  const entry = page.locator('.thumbnail-entry').nth(entryIndex);
+  const box = await entry.boundingBox();
+  if (!box) throw new Error('The target thumbnail is not visible');
+  const point = { clientX: box.x + box.width / 2, clientY: box.y + (after ? box.height - 5 : 5) };
+  const transfer = await page.evaluateHandle(items => {
+    const result = new DataTransfer();
+    for (const item of items)
+      result.items.add(new File([new Uint8Array(item.bytes)], item.name, { type: item.mimeType }));
+    return result;
+  }, files.map(file => ({ name: file.name, mimeType: file.mimeType, bytes: Array.from(file.buffer) })));
+  try {
+    await entry.dispatchEvent('dragover', { dataTransfer: transfer, ...point });
+    if (allowed) await expect(entry).toHaveClass(after ? /drop-after/ : /drop-before/);
+    else await expect(entry).not.toHaveClass(/drop-before|drop-after/);
+    await entry.dispatchEvent('drop', { dataTransfer: transfer, ...point });
+  } finally {
+    await transfer.dispose();
+  }
+}
+
 async function saveAndRead(page: Page, testInfo: TestInfo, name: string) {
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
@@ -118,6 +139,76 @@ test('編集中のPDFに結合し、別ページを右クリック削除して�
   expect(images?.entries().length).toBeGreaterThan(0);
   await page.screenshot({ path: testInfo.outputPath('merged-pages.png'), fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('サムネイルへ複数PDFを直接ドロップし、指定位置・書き込み・取り消しと保存結果を保つ', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const base = await fixture('drop-base', [400, 410, 420]);
+  const first = await fixture('drop-first', [500, 510]);
+  const second = await fixture('drop-second', [600]);
+  await page.goto('/');
+  await page.getByTestId('pdf-input').setInputFiles(base);
+  await expectPages(page, 3);
+  await page.getByRole('button', { name: '2ページ目', exact: true }).click();
+  await addText(page, '結合前の書き込み');
+  const originalIds = await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')));
+  await dropPdfOnSidebar(page, [first, second], 1);
+  await expectPages(page, 6);
+  await expect(page.getByRole('dialog', { name: 'PDFを結合', exact: true })).toHaveCount(0);
+  await expect(page.locator('.thumbnail-button').nth(0)).toHaveAttribute('data-page-id', originalIds[0]!);
+  await expect(page.locator('.thumbnail-button').nth(4)).toHaveAttribute('data-page-id', originalIds[1]!);
+  await expect(page.locator('.thumbnail-button').nth(5)).toHaveAttribute('data-page-id', originalIds[2]!);
+  await page.screenshot({ path: testInfo.outputPath('pdfs-dropped-into-sidebar.png'), fullPage: true });
+  await page.getByRole('button', { name: '5ページ目', exact: true }).click();
+  await expect(page.getByRole('button', { name: '文字: 結合前の書き込み', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expectPages(page, 3);
+  await page.getByRole('button', { name: 'やり直す', exact: true }).click();
+  await expectPages(page, 6);
+  const result = await saveAndRead(page, testInfo, 'dropped-pdfs-at-position.pdf');
+  expect(result.getPages().map(sheet => sheet.getWidth())).toEqual([400, 500, 510, 600, 410, 420]);
+  expectSourceLabels(result, ['DROP-BASE PAGE 1', 'DROP-FIRST PAGE 1', 'DROP-FIRST PAGE 2', 'DROP-SECOND PAGE 1', 'DROP-BASE PAGE 2', 'DROP-BASE PAGE 3']);
+  expect(result.getPage(4).node.Resources()?.lookup(PDFName.of('XObject'), PDFDict).entries().length).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '作業データ', exact: true }).click();
+  const projectDialog = page.getByRole('dialog', { name: '編集の続きを保存・再開', exact: true });
+  await expect(projectDialog).toBeVisible();
+  const projectDownload = page.waitForEvent('download');
+  await projectDialog.getByRole('button', { name: '作業データを保存', exact: true }).click();
+  const projectFile = testInfo.outputPath('dropped-pdfs-editable.lumapdf');
+  await (await projectDownload).saveAs(projectFile);
+  const project = JSON.parse(await readFile(projectFile, 'utf8')) as { pages: { sourceIndex: number }[] };
+  expect(project.pages.map(item => item.sourceIndex)).toEqual([0, 3, 4, 5, 1, 2]);
+  await page.reload();
+  await expect(page.locator('.thumbnail-button')).toHaveCount(0);
+  await page.getByTestId('project-input').setInputFiles(projectFile);
+  await expectPages(page, 6);
+  await page.getByRole('button', { name: '5ページ目', exact: true }).click();
+  await expect(page.getByRole('button', { name: '文字: 結合前の書き込み', exact: true })).toBeVisible();
+  const restored = await saveAndRead(page, testInfo, 'dropped-pdfs-restored.pdf');
+  expectSourceLabels(restored, ['DROP-BASE PAGE 1', 'DROP-FIRST PAGE 1', 'DROP-FIRST PAGE 2', 'DROP-SECOND PAGE 1', 'DROP-BASE PAGE 2', 'DROP-BASE PAGE 3']);
+  expect(errors).toEqual([]);
+});
+
+test('サムネイル末尾への単一PDFドロップと不正ファイルの一括拒否', async ({ page }, testInfo) => {
+  const base = await fixture('drop-tail', [400, 410]);
+  const valid = await fixture('drop-valid', [500]);
+  await page.goto('/');
+  await page.getByTestId('pdf-input').setInputFiles(base);
+  await expectPages(page, 2);
+  await dropPdfOnSidebar(page, [valid], 1, true);
+  await expectPages(page, 3);
+  const beforeIds = await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')));
+  const broken = { name: 'broken.pdf', mimeType: 'application/pdf', buffer: Buffer.from('This is not a PDF') };
+  await dropPdfOnSidebar(page, [valid, broken], 0);
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expectPages(page, 3);
+  expect(await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')))).toEqual(beforeIds);
+  await dropPdfOnSidebar(page, [{ name: 'not-a-pdf.txt', mimeType: 'text/plain', buffer: Buffer.from('not a PDF') }], 0);
+  await expect(page.getByRole('alert')).toContainText('PDFだけ');
+  await expectPages(page, 3);
+  const result = await saveAndRead(page, testInfo, 'drop-rejected-atomic.pdf');
+  expectSourceLabels(result, ['DROP-TAIL PAGE 1', 'DROP-TAIL PAGE 2', 'DROP-VALID PAGE 1']);
 });
 
 test('複数PDFのファイル順をドラッグとキーボードで変更して保存できる', async ({ page }, testInfo) => {
@@ -264,4 +355,9 @@ test('署名付きPDFでは結合とページ削除を無効にする', async ({
   await page.getByRole('button', { name: '2ページ目', exact: true }).click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'このページを削除', exact: true })).toBeDisabled();
   await expect(page.locator('.thumbnail-button')).toHaveCount(2);
+  const beforeIds = await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')));
+  await dropPdfOnSidebar(page, [await fixture('blocked', [500])], 0, false, false);
+  await expect(page.getByRole('alert')).toContainText('署名付きPDFは閲覧専用');
+  await expect(page.locator('.thumbnail-button')).toHaveCount(2);
+  expect(await page.locator('.thumbnail-button').evaluateAll(elements => elements.map(element => element.getAttribute('data-page-id')))).toEqual(beforeIds);
 });
