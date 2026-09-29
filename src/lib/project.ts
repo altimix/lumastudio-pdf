@@ -9,7 +9,6 @@ export interface PdfProject {
 }
 
 const MAX_PROJECT_BYTES = 100 * 1024 * 1024
-const MAX_PDF_BYTES = 50 * 1024 * 1024
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const ROTATIONS = new Set([0, 90, 180, 270])
@@ -80,9 +79,9 @@ function decodeBase64(value: unknown, maximum: number, label: string): Uint8Arra
 }
 
 function validatePdf(bytes: unknown): Uint8Array {
-  if (!(bytes instanceof Uint8Array) || bytes.length === 0 || bytes.length > MAX_PDF_BYTES) fail('元のPDFは50MB以下である必要があります。')
-  const header = String.fromCharCode(...bytes.subarray(0, 9))
-  if (!/^%PDF-(?:1\.[0-9]|2\.0)(?:[\r\n\t ]|$)/u.test(header)) fail('元のPDFのヘッダーが不正です。')
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) fail('元のPDFが空か、形式が不正です。')
+  const header = String.fromCharCode(...bytes.subarray(0, 1024))
+  if (!/%PDF-(?:1\.[0-9]|2\.0)(?:[\r\n\t ]|$)/u.test(header)) fail('元のPDFのヘッダーが不正です。')
   return bytes
 }
 
@@ -106,7 +105,7 @@ function validateImage(value: unknown): string {
 }
 
 /** Returns new, allow-listed objects; never spreads untrusted metadata into application state. */
-function validateProject(value: unknown): PdfProject {
+function validateProject(value: unknown, maximum = MAX_PROJECT_BYTES): PdfProject {
   const raw = object(value, '作業ファイル')
   const filename = string(raw.filename, 'PDFのファイル名', 512)
   const original = validatePdf(raw.original)
@@ -220,14 +219,15 @@ function validateProject(value: unknown): PdfProject {
       contentSize += result.dataUrl.length
     }
     contentSize += (result.text?.length ?? 0) * 3
-    if (contentSize > MAX_PROJECT_BYTES) fail('作業ファイルは100MBまで保存できます。画像を減らしてください。')
+    if (contentSize > maximum) fail('作業ファイルは100MBまで保存できます。画像を減らしてください。')
     return result
   })
   return { filename, original, pages, annotations }
 }
 
-export function encodeProject(project: PdfProject): Uint8Array {
-  const clean = validateProject(project)
+export function encodeProject(project: PdfProject, localSave = false): Uint8Array {
+  const maximum = localSave ? Number.MAX_SAFE_INTEGER : MAX_PROJECT_BYTES
+  const clean = validateProject(project, maximum)
   const serialized = JSON.stringify({
     app: 'LumaStudio PDF', version: 3,
     filename: clean.filename,
@@ -236,12 +236,13 @@ export function encodeProject(project: PdfProject): Uint8Array {
     annotations: clean.annotations,
   })
   const bytes = new TextEncoder().encode(serialized)
-  if (bytes.byteLength > MAX_PROJECT_BYTES) fail('作業ファイルは100MBまで保存できます。画像を減らしてください。')
+  if (bytes.byteLength > maximum) fail('作業ファイルは100MBまで保存できます。画像を減らしてください。')
   return bytes
 }
 
-export function decodeProject(bytes: Uint8Array): PdfProject {
-  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > MAX_PROJECT_BYTES) fail('作業ファイルは空でなく、100MB以下である必要があります。')
+export function decodeProject(bytes: Uint8Array, localSave = false): PdfProject {
+  const maximum = localSave ? Number.MAX_SAFE_INTEGER : MAX_PROJECT_BYTES
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > maximum) fail('作業ファイルは空でなく、100MB以下である必要があります。')
   let parsed: unknown
   try { parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) }
   catch { fail('作業ファイルの文字形式またはJSON形式が不正です。') }
@@ -250,8 +251,8 @@ export function decodeProject(bytes: Uint8Array): PdfProject {
   if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) fail('この作業ファイルのバージョンには対応していません。')
   return validateProject({
     filename: raw.filename,
-    original: decodeBase64(raw.original, MAX_PDF_BYTES, '元のPDF（50MBまで）'),
+    original: decodeBase64(raw.original, maximum, '元のPDF'),
     pages: raw.pages,
     annotations: raw.annotations,
-  })
+  }, maximum)
 }

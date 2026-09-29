@@ -2,19 +2,21 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const MAX_PDF_BYTES = 80 * 1024 * 1024;
-
 function validatePdfBytes(data) {
   if (!(Array.isArray(data) || Buffer.isBuffer(data) || data instanceof Uint8Array)) {
     throw new Error('PDFデータの形式が正しくありません。');
   }
-  if (data.length < 5 || data.length > MAX_PDF_BYTES) {
-    throw new Error('PDFは80MB以下のファイルを選択してください。');
+  if (data.length < 5) {
+    throw new Error('内容のあるPDFファイルを選択してください。');
   }
   if (Array.isArray(data) && data.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
     throw new Error('PDFデータが破損しています。');
   }
-  const bytes = Buffer.from(data);
+  const bytes = Buffer.isBuffer(data)
+    ? data
+    : data instanceof Uint8Array
+      ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+      : Buffer.from(data);
   if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))) {
     throw new Error('PDFファイルを選択してください。');
   }
@@ -24,9 +26,9 @@ function validatePdfBytes(data) {
 async function readPdf(filePath) {
   if (path.extname(filePath).toLowerCase() !== '.pdf') throw new Error('PDFファイルを選択してください。');
   const stat = await fs.stat(filePath);
-  if (!stat.isFile() || stat.size > MAX_PDF_BYTES) throw new Error('PDFは80MB以下のファイルを選択してください。');
+  if (!stat.isFile() || !stat.size) throw new Error('内容のあるPDFファイルを選択してください。');
   const bytes = validatePdfBytes(await fs.readFile(filePath));
-  return { name: path.basename(filePath), data: Array.from(bytes) };
+  return { name: path.basename(filePath), data: bytes };
 }
 
 function fingerprint(bytes) {
@@ -52,7 +54,7 @@ function watchPrintInbox(inboxPath, onPdf, { intervalMs = 800, stableMs = 1800, 
         const filePath = path.join(inboxPath, entry.name);
         try {
           const stat = await fs.stat(filePath);
-          if (!stat.size || stat.size > MAX_PDF_BYTES) continue;
+          if (!stat.size) continue;
           const signature = `${stat.size}:${stat.mtimeMs}`;
           const prior = observations.get(filePath);
           if (!prior || prior.signature !== signature) {
@@ -71,7 +73,7 @@ function watchPrintInbox(inboxPath, onPdf, { intervalMs = 800, stableMs = 1800, 
             continue;
           }
           delivered.set(filePath, { signature, hash });
-          onPdf({ name: entry.name, data: Array.from(bytes) });
+          onPdf({ name: entry.name, data: bytes });
         } catch (error) {
           // Locked or unfinished printer output is retried on the next scan.
           if (!['ENOENT', 'EBUSY', 'EACCES', 'EPERM'].includes(error.code)) onError(error);
@@ -97,4 +99,4 @@ function watchPrintInbox(inboxPath, onPdf, { intervalMs = 800, stableMs = 1800, 
   };
 }
 
-module.exports = { MAX_PDF_BYTES, validatePdfBytes, readPdf, watchPrintInbox };
+module.exports = { validatePdfBytes, readPdf, watchPrintInbox };

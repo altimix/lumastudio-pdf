@@ -209,6 +209,7 @@ export default function App() {
   const closeHelp = useCallback(() => setHelpSection(null), []);
   const [projectError, setProjectError] = useState("");
   const projectInput = useRef<HTMLInputElement>(null);
+  const restoreSavedPdf = useRef<(bytes: Uint8Array, name: string) => Promise<boolean>>(async () => false);
   const [pageMenu, setPageMenu] = useState<PageMenuTarget | null>(null);
   const draggedPage = useRef<string | null>(null);
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
@@ -699,11 +700,22 @@ export default function App() {
       )
     )
       return false;
-    if (bytes.length > 50 * 1024 * 1024) {
-      setError(
-        "50MBまでのPDFを開けます。ファイルを分割してお試しください。",
-      );
-      return false;
+    let editingWarning = "";
+    if (!fromCopy && window.lumaDesktop?.savedPdfProject) {
+      try {
+        const digestInput = bytes.buffer instanceof ArrayBuffer
+          ? bytes as Uint8Array<ArrayBuffer>
+          : new Uint8Array(bytes);
+        const digest = await crypto.subtle.digest('SHA-256', digestInput);
+        const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        const project = await window.lumaDesktop.savedPdfProject(hash);
+        if (project) {
+          if (await restoreSavedPdf.current(project, name)) return true;
+          editingWarning = '再編集情報を読み込めなかったため、完成PDFとして開きました。';
+        }
+      } catch {
+        editingWarning = '再編集情報を読み込めなかったため、完成PDFとして開きました。';
+      }
     }
     flushBeforeOperation.current();
     setBusy("PDFを開いています");
@@ -738,6 +750,7 @@ export default function App() {
           ? "署名情報のあるPDFを閲覧しています。有効性は未検証です。Acrobatなどで確認してください。編集には署名前の原本を使用してください。"
           : "道具を選んで、用紙の記入したい場所をクリックしてください。",
       );
+      if (editingWarning) setError(editingWarning);
       if (previous) void previous.loadingTask.destroy();
       return true;
     } catch (e) {
@@ -778,7 +791,7 @@ export default function App() {
   useEffect(
     () =>
       window.lumaDesktop?.onOpenPdf(async (file) => {
-        await openBytes(new Uint8Array(file.data), file.name);
+        await openBytes(file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data), file.name);
       }),
     [openBytes],
   );
@@ -796,7 +809,7 @@ export default function App() {
     try {
       if (window.lumaDesktop) {
         const file = await window.lumaDesktop.openPdf();
-        if (file) await openBytes(new Uint8Array(file.data), file.name);
+        if (file) await openBytes(file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data), file.name);
       } else pdfInput.current?.click();
     } catch {
       setError("ファイルを開けませんでした。もう一度お試しください。");
@@ -819,14 +832,6 @@ export default function App() {
       throw new Error("一度に結合できるPDFは30個までです。");
     if (next.some((file) => !file.name.toLowerCase().endsWith(".pdf")))
       throw new Error("結合するファイルはPDFだけを選んでください。");
-    if (
-      next.reduce(
-        (total, file) => total + file.bytes.byteLength,
-        original.current?.byteLength ?? 0,
-      ) >
-      50 * 1024 * 1024
-    )
-      throw new Error("開いているPDFと追加するPDFの合計は50MBまでです。");
     setMergeFiles(next);
     setMergeError("");
     setMergeOpen(true);
@@ -840,8 +845,6 @@ export default function App() {
     try {
       if (files.length + mergeFiles.length > 30)
         throw new Error("一度に結合できるPDFは30個までです。");
-      if (files.reduce((sum, f) => sum + f.size, 0) > 50 * 1024 * 1024)
-        throw new Error("PDFは合計50MBまで選択できます。");
       const incoming = [];
       for (const file of files)
         incoming.push({
@@ -873,7 +876,7 @@ export default function App() {
       queueMergeFiles(
         files.map((file) => ({
           name: file.name,
-          bytes: new Uint8Array(file.data),
+          bytes: file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data),
         })),
       );
     } catch (e) {
@@ -945,8 +948,6 @@ export default function App() {
       if (files.length > 30) throw new Error("一度に結合できるPDFは30個までです。");
       if (files.some((file) => !file.name.toLowerCase().endsWith(".pdf")))
         throw new Error("結合するファイルはPDFだけを選んでください。");
-      if (files.reduce((total, file) => total + file.size, original.current?.byteLength ?? 0) > 50 * 1024 * 1024)
-        throw new Error("開いているPDFと追加するPDFの合計は50MBまでです。");
       const current = flushInlineText();
       setBusy("PDFを結合しています");
       const incoming = await Promise.all(files.map(async (file) => ({
@@ -1007,9 +1008,17 @@ export default function App() {
         prepared.pages,
         prepared.annotations,
       );
-      const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
+      const stem = filename.replace(/\.pdf$/i, "");
+      const previous = stem.match(/^(.*_記入済)(?:_([0-9]+))?$/u);
+      const next = previous ? Number(previous[2] ?? "1") + 1 : 0;
+      const name = previous && Number.isSafeInteger(next)
+        ? `${previous[1]}_${next}.pdf`
+        : `${stem}_記入済.pdf`;
       if (window.lumaDesktop) {
-        if (!(await window.lumaDesktop.savePdf(Array.from(data), name))) return "canceled";
+        const editingData = encodeProject({ filename, original: original.current, pages: prepared.pages, annotations: prepared.annotations }, true);
+        const saved = await window.lumaDesktop.savePdf(data, name, editingData);
+        if (!saved) return "canceled";
+        if (typeof saved === "object") setFilename(saved.name);
       } else {
         const blob = new Blob([new Uint8Array(data)], {
           type: "application/pdf",
@@ -1048,7 +1057,7 @@ export default function App() {
       });
       const name = filename.replace(/\.pdf$/i, "") + ".lumapdf";
       if (window.lumaDesktop) {
-        if (!(await window.lumaDesktop.saveProject(Array.from(bytes), name)))
+        if (!(await window.lumaDesktop.saveProject(bytes, name)))
           return "canceled";
       } else {
         const url = URL.createObjectURL(
@@ -1093,22 +1102,22 @@ export default function App() {
       }
     });
   });
-  const restoreProject = async (bytes: Uint8Array) => {
-    if (busy) return;
+  const restoreProject = async (bytes: Uint8Array, fromSavedPdf = false, savedPdfName?: string): Promise<boolean> => {
+    if (busy) return false;
     if (
-      dirty &&
+      dirty && !fromSavedPdf &&
       !confirm(
         "保存していない変更があります。変更を破棄して作業データを開きますか？",
       )
     )
-      return;
+      return false;
     flushNumericControls();
     setBusy("作業データを開いています");
     setProjectError("");
     let candidate: Awaited<ReturnType<typeof loadPdf>> | null = null;
     let adopted = false;
     try {
-      const data = decodeProject(bytes);
+      const data = decodeProject(bytes, fromSavedPdf);
       candidate = await loadPdf(data.original);
       if (candidate.signed)
         throw new Error(
@@ -1148,7 +1157,7 @@ export default function App() {
       history.current = [next];
       cursor.current = 0;
       setSavedState(JSON.stringify(next));
-      setFilename(data.filename);
+      setFilename(fromSavedPdf && savedPdfName ? savedPdfName : data.filename);
       setActiveId(pages[0].id);
       setSelectedId(null);
       setTool("select");
@@ -1156,13 +1165,19 @@ export default function App() {
       setAiOpen(false);
       setProjectOpen(false);
       closePageMenu();
-      notify("作業データを開きました。文字・印鑑を選んで編集を続けられます。");
+      notify(fromSavedPdf
+        ? "保存したPDFの編集を再開しました。文字・印鑑を選んで編集を続けられます。"
+        : "作業データを開きました。文字・印鑑を選んで編集を続けられます。");
       if (previous) void previous.loadingTask.destroy();
+      return true;
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "作業データを開けませんでした。";
-      setProjectError(message);
-      setError(message);
+      if (!fromSavedPdf) {
+        setProjectError(message);
+        setError(message);
+      }
+      return false;
     } finally {
       // Releasing an invalid candidate can wait on a stalled PDF worker.
       // Keep the original document usable and show the validation error now.
@@ -1170,6 +1185,7 @@ export default function App() {
       setBusy("");
     }
   };
+  restoreSavedPdf.current = (bytes, name) => restoreProject(bytes, true, name);
   const openProject = async () => {
     if (busy) return;
     setProjectError("");
@@ -1179,7 +1195,7 @@ export default function App() {
     }
     try {
       const file = await window.lumaDesktop.openProject();
-      if (file) await restoreProject(new Uint8Array(file.data));
+      if (file) await restoreProject(file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data));
     } catch {
       setProjectError("作業データを選択できませんでした。");
     }
@@ -1223,14 +1239,18 @@ export default function App() {
     setBusy("選んだページを書き出しています");
     setError("");
     try {
+      const prepared = await prepareTextGeometry(current);
+      const pages = [prepared.pages[index]];
+      const annotations = prepared.annotations.filter((a) => a.pageId === id);
       const bytes = await exportPdf(
         original.current,
-        [current.pages[index]],
-        current.annotations.filter((a) => a.pageId === id),
+        pages,
+        annotations,
       );
       const name = filename.replace(/\.pdf$/i, "") + `_${index + 1}ページ.pdf`;
       if (window.lumaDesktop) {
-        if (!(await window.lumaDesktop.savePdf(Array.from(bytes), name)))
+        const editingData = encodeProject({ filename: name, original: original.current, pages, annotations }, true);
+        if (!(await window.lumaDesktop.savePdf(bytes, name, editingData)))
           return;
       } else {
         const url = URL.createObjectURL(
@@ -1263,7 +1283,7 @@ export default function App() {
         ? original.current
         : await exportPdf(original.current, current.pages, current.annotations);
       if (window.lumaDesktop)
-        await window.lumaDesktop.printPdf(Array.from(data));
+        await window.lumaDesktop.printPdf(data);
       else {
         const exported = await loadPdf(data);
         const printArea = document.getElementById("print-area")!;

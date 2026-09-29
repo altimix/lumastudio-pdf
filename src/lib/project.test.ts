@@ -60,6 +60,12 @@ describe('editable PDF project', () => {
     expect(restored.annotations).not.toBe(project.annotations)
   })
 
+  it('accepts a PDF header within the first 1024 bytes like the desktop reader', () => {
+    const project = example()
+    project.original = encoder.encode('\uFEFF% leading bytes\n%PDF-1.7\nfixture\n%%EOF\n')
+    expect(decodeProject(encodeProject(project)).original).toEqual(project.original)
+  })
+
   it('retains imported seal identity while rejecting that marker on ordinary text', () => {
     const project = example()
     project.annotations[2].stampSource = true
@@ -214,18 +220,12 @@ describe('editable PDF project', () => {
     expect(() => encodeProject(project)).toThrow(/縦位置/)
   })
 
-  it('rejects oversized projects and original PDF inputs before decoding or allocating base64', () => {
+  it('keeps the separate 100MB project limit while accepting PDF sources over 50MB', () => {
     expect(() => decodeProject(new Uint8Array(100 * 1024 * 1024 + 1))).toThrow(/100MB/)
     const project = example()
     project.original = new Uint8Array(50 * 1024 * 1024 + 1)
     project.original.set(encoder.encode('%PDF-1.7\n'))
-    expect(() => encodeProject(project)).toThrow(/50MB/)
-  })
-
-  it('rejects an oversized encoded source before allocating its decoded bytes', () => {
-    const raw = rawExample()
-    raw.original = 'A'.repeat(Math.ceil(50 * 1024 * 1024 / 3) * 4 + 4)
-    expect(() => decodeRaw(raw)).toThrow(/50MB/)
+    expect(encodeProject(project).byteLength).toBeGreaterThan(50 * 1024 * 1024)
   })
 
   it('rejects images over 2 MB', () => {
