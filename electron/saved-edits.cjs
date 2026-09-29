@@ -30,7 +30,7 @@ class SavedEdits {
     return Buffer.from(JSON.stringify({ ...manifest.project, original: original.toString('base64') }));
   }
 
-  async record(pdfBytes, projectBytes, savedFilename) {
+  async record(pdfBytes, projectBytes) {
     if (!Buffer.isBuffer(pdfBytes) || !Buffer.isBuffer(projectBytes) || !projectBytes.length) {
       throw new Error('再編集情報の形式が正しくありません。');
     }
@@ -43,12 +43,6 @@ class SavedEdits {
     if (!original.length || original.toString('base64') !== project.original) throw new Error('再編集情報の元PDFが不正です。');
     const sourceHash = sha256(original);
     const { original: _encoded, ...metadata } = project;
-    if (savedFilename !== undefined) {
-      if (typeof savedFilename !== 'string' || savedFilename !== path.basename(savedFilename) || !/\.pdf$/i.test(savedFilename)) {
-        throw new Error('保存PDFの名前が正しくありません。');
-      }
-      metadata.filename = savedFilename;
-    }
     const digest = sha256(pdfBytes);
     await fs.mkdir(this.sources, { recursive: true });
     const sourceFile = path.join(this.sources, `${sourceHash}.pdf`);

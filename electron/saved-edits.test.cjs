@@ -11,12 +11,10 @@ test('only an exact locally saved PDF hash retrieves its editing data', async ()
   try {
     const saved = new SavedEdits(root);
     const pdf = Buffer.from('%PDF-1.7\nexample\n%%EOF\n');
-    const project = Buffer.from(JSON.stringify({ app: 'LumaStudio PDF', version: 3, original: pdf.toString('base64'), annotations: [] }));
+    const project = Buffer.from(JSON.stringify({ app: 'LumaStudio PDF', version: 3, filename: 'source.pdf', original: pdf.toString('base64'), annotations: [] }));
     assert.equal(await saved.read(sha256(pdf)), null);
-    assert.equal(await saved.record(pdf, project, 'actually-saved.pdf'), sha256(pdf));
-    assert.deepEqual(JSON.parse((await saved.read(sha256(pdf))).toString()), {
-      ...JSON.parse(project.toString()), filename: 'actually-saved.pdf',
-    });
+    assert.equal(await saved.record(pdf, project), sha256(pdf));
+    assert.deepEqual(JSON.parse((await saved.read(sha256(pdf))).toString()), JSON.parse(project.toString()));
     assert.equal(await saved.read(sha256(Buffer.concat([pdf, Buffer.from('changed')]))), null);
     assert.equal(await saved.read('../secrets'), null);
     await saved.record(Buffer.concat([pdf, Buffer.from('second')]), project);
@@ -36,8 +34,8 @@ test('editable source is recorded when app data is on a hardlink-free volume', a
     const original = Buffer.from('%PDF-1.7\noriginal\n%%EOF');
     const output = Buffer.from('%PDF-1.7\noutput\n%%EOF');
     const project = Buffer.from(JSON.stringify({ app: 'LumaStudio PDF', version: 3, original: original.toString('base64') }));
-    await saved.record(output, project, 'saved.pdf');
-    assert.equal(JSON.parse((await saved.read(sha256(output))).toString()).filename, 'saved.pdf');
+    await saved.record(output, project);
+    assert.equal(JSON.parse((await saved.read(sha256(output))).toString()).original, original.toString('base64'));
     assert.equal((await fs.readdir(path.join(root, 'editable-pdfs', 'sources'))).length, 1);
   } finally {
     await fs.rm(root, { recursive: true });

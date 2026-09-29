@@ -209,7 +209,7 @@ export default function App() {
   const closeHelp = useCallback(() => setHelpSection(null), []);
   const [projectError, setProjectError] = useState("");
   const projectInput = useRef<HTMLInputElement>(null);
-  const restoreSavedPdf = useRef<(bytes: Uint8Array) => Promise<boolean>>(async () => false);
+  const restoreSavedPdf = useRef<(bytes: Uint8Array, name: string) => Promise<boolean>>(async () => false);
   const [pageMenu, setPageMenu] = useState<PageMenuTarget | null>(null);
   const draggedPage = useRef<string | null>(null);
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
@@ -708,7 +708,7 @@ export default function App() {
         const digest = await crypto.subtle.digest('SHA-256', digestInput);
         const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
         const project = await window.lumaDesktop.savedPdfProject(hash);
-        if (project) return restoreSavedPdf.current(project);
+        if (project) return restoreSavedPdf.current(project, name);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : '保存PDFの編集情報を確認できませんでした。');
         return false;
@@ -1098,7 +1098,7 @@ export default function App() {
       }
     });
   });
-  const restoreProject = async (bytes: Uint8Array, fromSavedPdf = false): Promise<boolean> => {
+  const restoreProject = async (bytes: Uint8Array, fromSavedPdf = false, savedPdfName?: string): Promise<boolean> => {
     if (busy) return false;
     if (
       dirty && !fromSavedPdf &&
@@ -1153,7 +1153,7 @@ export default function App() {
       history.current = [next];
       cursor.current = 0;
       setSavedState(JSON.stringify(next));
-      setFilename(data.filename);
+      setFilename(fromSavedPdf && savedPdfName ? savedPdfName : data.filename);
       setActiveId(pages[0].id);
       setSelectedId(null);
       setTool("select");
@@ -1179,7 +1179,7 @@ export default function App() {
       setBusy("");
     }
   };
-  restoreSavedPdf.current = (bytes) => restoreProject(bytes, true);
+  restoreSavedPdf.current = (bytes, name) => restoreProject(bytes, true, name);
   const openProject = async () => {
     if (busy) return;
     setProjectError("");

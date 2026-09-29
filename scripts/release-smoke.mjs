@@ -261,6 +261,20 @@ try {
   await clickMenu(application, 'ファイル', 'PDFを開く…');
   await expect(page.getByRole('status').filter({ hasText: '保存したPDFの編集を再開しました' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
+  await expect(page.locator('.document-name')).toContainText('keyboard-saved.pdf');
+  const aliasPdfPath = path.join(userData, 'same-bytes-alias.pdf');
+  await fs.copyFile(keyboardPdfPath, aliasPdfPath);
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, aliasPdfPath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.locator('.document-name')).toContainText('same-bytes-alias.pdf');
+  await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, keyboardPdfPath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.locator('.document-name')).toContainText('keyboard-saved.pdf');
   const reopenedPdfPath = path.join(userData, 'reopened-saved.pdf');
   await application.evaluate(({ dialog }, filePath) => {
     dialog.showSaveDialog = async (_window, options) => {

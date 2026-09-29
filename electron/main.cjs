@@ -453,7 +453,7 @@ function registerIpc() {
     if (result.canceled || !result.filePath) return false;
     await saveNewFile(result.filePath, bytes);
     if (project) {
-      try { await new SavedEdits(app.getPath('userData')).record(bytes, project, path.basename(result.filePath)); }
+      try { await new SavedEdits(app.getPath('userData')).record(bytes, project); }
       catch { throw new Error('PDFは保存しましたが、再編集情報を記録できませんでした。作業データを別途保存してください。'); }
     }
     await inboxWatcher?.markSaved(result.filePath, bytes);
