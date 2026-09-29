@@ -262,10 +262,14 @@ try {
   await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
   const reopenedPdfPath = path.join(userData, 'reopened-saved.pdf');
   await application.evaluate(({ dialog }, filePath) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    dialog.showSaveDialog = async (_window, options) => {
+      globalThis.__reopenedSuggestedName = options.defaultPath;
+      return { canceled: false, filePath };
+    };
   }, reopenedPdfPath);
   await page.keyboard.press('ControlOrMeta+s');
   await expect.poll(async () => fs.stat(reopenedPdfPath).then(() => true, () => false)).toBe(true);
+  assert.equal(path.basename(await application.evaluate(() => globalThis.__reopenedSuggestedName)), 'keyboard-saved_記入済.pdf');
   await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
   const firstSaved = await PDFDocument.load(await fs.readFile(keyboardPdfPath));
   const secondSaved = await PDFDocument.load(await fs.readFile(reopenedPdfPath));
