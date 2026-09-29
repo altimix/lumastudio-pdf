@@ -60,6 +60,12 @@ describe('editable PDF project', () => {
     expect(restored.annotations).not.toBe(project.annotations)
   })
 
+  it('accepts a PDF header within the first 1024 bytes like the desktop reader', () => {
+    const project = example()
+    project.original = encoder.encode('\uFEFF% leading bytes\n%PDF-1.7\nfixture\n%%EOF\n')
+    expect(decodeProject(encodeProject(project)).original).toEqual(project.original)
+  })
+
   it('retains imported seal identity while rejecting that marker on ordinary text', () => {
     const project = example()
     project.annotations[2].stampSource = true

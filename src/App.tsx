@@ -700,6 +700,7 @@ export default function App() {
       )
     )
       return false;
+    let editingWarning = "";
     if (!fromCopy && window.lumaDesktop?.savedPdfProject) {
       try {
         const digestInput = bytes.buffer instanceof ArrayBuffer
@@ -708,10 +709,12 @@ export default function App() {
         const digest = await crypto.subtle.digest('SHA-256', digestInput);
         const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
         const project = await window.lumaDesktop.savedPdfProject(hash);
-        if (project) return restoreSavedPdf.current(project, name);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : '保存PDFの編集情報を確認できませんでした。');
-        return false;
+        if (project) {
+          if (await restoreSavedPdf.current(project, name)) return true;
+          editingWarning = '再編集情報を読み込めなかったため、完成PDFとして開きました。';
+        }
+      } catch {
+        editingWarning = '再編集情報を読み込めなかったため、完成PDFとして開きました。';
       }
     }
     flushBeforeOperation.current();
@@ -747,6 +750,7 @@ export default function App() {
           ? "署名情報のあるPDFを閲覧しています。有効性は未検証です。Acrobatなどで確認してください。編集には署名前の原本を使用してください。"
           : "道具を選んで、用紙の記入したい場所をクリックしてください。",
       );
+      if (editingWarning) setError(editingWarning);
       if (previous) void previous.loadingTask.destroy();
       return true;
     } catch (e) {
@@ -1169,8 +1173,10 @@ export default function App() {
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "作業データを開けませんでした。";
-      setProjectError(message);
-      setError(message);
+      if (!fromSavedPdf) {
+        setProjectError(message);
+        setError(message);
+      }
       return false;
     } finally {
       // Releasing an invalid candidate can wait on a stalled PDF worker.

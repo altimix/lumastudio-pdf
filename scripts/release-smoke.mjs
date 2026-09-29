@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -306,6 +307,13 @@ try {
   await expect(page.getByRole('status').filter({ hasText: '保存したPDFの編集を再開しました' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
   console.log(JSON.stringify({ stage: 'single-page-pdf-reopened-editable', platform: process.platform }));
+  const singlePageDigest = createHash('sha256').update(await fs.readFile(singlePagePath)).digest('hex');
+  await fs.writeFile(path.join(userData, 'editable-pdfs', `${singlePageDigest}.json`), '{broken');
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('完成PDFとして開きました');
+  await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(0);
+  console.log(JSON.stringify({ stage: 'broken-edit-cache-falls-back-to-completed-pdf', platform: process.platform }));
   const changedPdfPath = path.join(userData, 'externally-changed.pdf');
   await fs.writeFile(changedPdfPath, Buffer.concat([
     await fs.readFile(keyboardPdfPath),
@@ -318,6 +326,27 @@ try {
   await expect(page.getByTestId('pdf-surface')).toBeVisible();
   await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(0);
   console.log(JSON.stringify({ stage: 'changed-pdf-kept-as-completed-page', platform: process.platform }));
+  const prefixedPath = path.join(userData, 'prefixed-header.pdf');
+  await fs.writeFile(prefixedPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), await fs.readFile(keyboardPdfPath)]));
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, prefixedPath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.locator('.document-name')).toContainText('prefixed-header.pdf');
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.locator('.busy-indicator')).toHaveCount(0);
+  const prefixedSavedPath = path.join(userData, 'prefixed-saved.pdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, prefixedSavedPath);
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(async () => fs.stat(prefixedSavedPath).then(() => true, () => false)).toBe(true);
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, prefixedSavedPath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.getByRole('status').filter({ hasText: '保存したPDFの編集を再開しました' })).toBeVisible();
+  console.log(JSON.stringify({ stage: 'prefixed-pdf-saved-and-reopened', platform: process.platform }));
 
   // Electron handles this beforeunload itself; Playwright's default CDP
   // auto-dismiss can race the native confirmation and see no JS dialog.

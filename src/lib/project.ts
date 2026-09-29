@@ -80,8 +80,8 @@ function decodeBase64(value: unknown, maximum: number, label: string): Uint8Arra
 
 function validatePdf(bytes: unknown): Uint8Array {
   if (!(bytes instanceof Uint8Array) || bytes.length === 0) fail('元のPDFが空か、形式が不正です。')
-  const header = String.fromCharCode(...bytes.subarray(0, 9))
-  if (!/^%PDF-(?:1\.[0-9]|2\.0)(?:[\r\n\t ]|$)/u.test(header)) fail('元のPDFのヘッダーが不正です。')
+  const header = String.fromCharCode(...bytes.subarray(0, 1024))
+  if (!/%PDF-(?:1\.[0-9]|2\.0)(?:[\r\n\t ]|$)/u.test(header)) fail('元のPDFのヘッダーが不正です。')
   return bytes
 }
 
