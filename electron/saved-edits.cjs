@@ -1,14 +1,16 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
+const { saveNewFile } = require('./safe-save.cjs');
 
 const DIGEST = /^[a-f0-9]{64}$/;
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 class SavedEdits {
-  constructor(userData) {
+  constructor(userData, { saveSource = saveNewFile } = {}) {
     this.directory = path.join(userData, 'editable-pdfs');
     this.sources = path.join(this.directory, 'sources');
+    this.saveSource = saveSource;
   }
 
   async read(digest) {
@@ -52,14 +54,8 @@ class SavedEdits {
     const sourceFile = path.join(this.sources, `${sourceHash}.pdf`);
     const sourceStat = await fs.lstat(sourceFile).catch(() => null);
     if (!sourceStat) {
-      const sourceTemporary = path.join(this.sources, `${sourceHash}.${randomUUID()}.tmp`);
-      try {
-        await fs.writeFile(sourceTemporary, original, { flag: 'wx', mode: 0o600 });
-        try { await fs.link(sourceTemporary, sourceFile); }
-        catch (error) { if (error.code !== 'EEXIST') throw error; }
-      } finally {
-        await fs.unlink(sourceTemporary).catch(() => {});
-      }
+      try { await this.saveSource(sourceFile, original); }
+      catch (error) { if (error.code !== 'EEXIST') throw error; }
     } else if (!sourceStat.isFile()) throw new Error('保存PDFの元データを記録できません。');
     const temporary = path.join(this.directory, `${digest}.${randomUUID()}.tmp`);
     try {

@@ -3,7 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 const NO_HARDLINK = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV']);
-const existingFileError = () => new Error('既存のファイルは上書きできません。別の名前で保存してください。');
+const existingFileError = () => Object.assign(new Error('既存のファイルは上書きできません。別の名前で保存してください。'), { code: 'EEXIST' });
 
 async function saveWithoutHardlink(target, bytes) {
   let handle;
