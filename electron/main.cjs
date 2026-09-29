@@ -3,6 +3,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { validatePdfBytes, readPdf, watchPrintInbox } = require('./pdf-files.cjs');
+const { SavedEdits } = require('./saved-edits.cjs');
+const { saveNewFile, saveReplaceFile } = require('./safe-save.cjs');
 
 app.setName('LumaStudio PDF');
 app.setAppUserModelId('jp.altimix.lumastudio-pdf');
@@ -95,9 +97,7 @@ function flushPdfs() {
 }
 
 function enqueuePdf(pdf) {
-  // Single-document MVP: cap queued bytes rather than consuming unlimited RAM.
-  const total = pendingPdfs.reduce((sum, item) => sum + item.data.length, 0);
-  if (pendingPdfs.length >= 10 || total + pdf.data.length > 160 * 1024 * 1024) {
+  if (pendingPdfs.length >= 10) {
     dialog.showErrorBox('印刷受信箱を確認してください', '受信したPDFが多いため、自動で開く処理を停止しました。受信箱からPDFを選んで開いてください。ファイルは削除していません。');
     return;
   }
@@ -136,11 +136,7 @@ async function choosePdfs() {
   if (result.canceled || !result.filePaths.length) return [];
   if (result.filePaths.length > 30) throw new Error('一度に選べるPDFは30個までです。');
   const files = [];
-  let total = 0;
   for (const filePath of result.filePaths) {
-    const stat = await fs.stat(filePath);
-    total += stat.size;
-    if (total > 50 * 1024 * 1024) throw new Error('結合するPDFは合計50MBまで選択できます。');
     files.push(await readPdf(filePath));
   }
   return files;
@@ -361,11 +357,11 @@ function registerIpc() {
     if(path.extname(filePath).toLowerCase()!=='.lumapdf')throw new Error('拡張子が .lumapdf の作業データを選択してください。');
     const stat=await fs.stat(filePath);
     if(!stat.isFile() || stat.size>100*1024*1024)throw new Error('作業データは100MBまで読み込めます。');
-    return {name:path.basename(filePath),data:Array.from(await fs.readFile(filePath))};
+    return {name:path.basename(filePath),data:await fs.readFile(filePath)};
   });
   ipcMain.handle('luma:save-project', async (event,data,suggestedName) => {
     assertMainSender(event);
-    if(!Array.isArray(data) || !data.length || data.length>100*1024*1024 || !data.every(n=>Number.isInteger(n)&&n>=0&&n<=255))throw new Error('作業データの形式またはサイズが正しくありません。');
+    if(!(Array.isArray(data) || data instanceof Uint8Array) || !data.length || data.length>100*1024*1024 || (Array.isArray(data) && !data.every(n=>Number.isInteger(n)&&n>=0&&n<=255)))throw new Error('作業データの形式またはサイズが正しくありません。');
     const bytes=Buffer.from(data);let content;
     try{content=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('作業データの形式が正しくありません。');}
     if(content.app!=='LumaStudio PDF' || (content.version!==1 && content.version!==2 && content.version!==3))throw new Error('対応していない作業データです。');
@@ -373,7 +369,7 @@ function registerIpc() {
     const result=await dialog.showSaveDialog(mainWindow,{title:'編集を再開できる作業データを保存',defaultPath:path.join(app.getPath('documents'),cleanName.endsWith('.lumapdf')?cleanName:`${cleanName}.lumapdf`),filters:[{name:'LumaStudio PDF 作業データ',extensions:['lumapdf']}],properties:['showOverwriteConfirmation','createDirectory']});
     if(result.canceled || !result.filePath)return false;
     if(path.extname(result.filePath).toLowerCase()!=='.lumapdf')throw new Error('元のPDFを上書きしないよう .lumapdf の名前で保存してください。');
-    await fs.writeFile(result.filePath,bytes);return true;
+    await saveReplaceFile(result.filePath,bytes);return true;
   });
   ipcMain.handle('luma:open-pdfs', async (event) => { assertMainSender(event); return choosePdfs(); });
   ipcMain.handle('luma:choose-certificate', async (event) => {
@@ -421,9 +417,9 @@ function registerIpc() {
     if (result.canceled || !result.filePath) return false;
     // Never replace the source or an earlier signed file, even after an OS
     // overwrite prompt. A fresh file keeps both the original and signed copy.
-    try { await fs.writeFile(result.filePath, signed, { flag: 'wx' }); }
+    try { await saveNewFile(result.filePath, signed); }
     catch (error) {
-      if (error.code === 'EEXIST') throw new Error('元のPDFを残すため、新しいファイル名で保存してください。');
+      if (error.message?.includes('上書きできません')) throw new Error('元のPDFを残すため、新しいファイル名で保存してください。');
       throw new Error('署名したPDFを保存できませんでした。保存先を確認してください。');
     }
     await inboxWatcher?.markSaved(result.filePath, signed);
@@ -432,9 +428,21 @@ function registerIpc() {
   ipcMain.handle('luma:ai-status', async (event) => { assertMainSender(event); return aiService.getAiStatus(); });
   ipcMain.handle('luma:autofill', async (event, payload) => { assertMainSender(event); return aiService.autofill(payload); });
   ipcMain.handle('luma:open-pdf', async (event) => { assertMainSender(event); return choosePdf(); });
-  ipcMain.handle('luma:save-pdf', async (event, data, suggestedName) => {
+  ipcMain.handle('luma:saved-pdf-project', async (event, digest) => {
+    assertMainSender(event);
+    return new SavedEdits(app.getPath('userData')).read(digest);
+  });
+  ipcMain.handle('luma:save-pdf', async (event, data, suggestedName, editingData) => {
     assertMainSender(event);
     const bytes = validatePdfBytes(data);
+    let project;
+    if (editingData !== undefined) {
+      if (!(editingData instanceof Uint8Array) && !Buffer.isBuffer(editingData)) throw new Error('再編集情報の形式が正しくありません。');
+      project = Buffer.from(editingData);
+      let header;
+      try { header = JSON.parse(project.toString('utf8')); } catch { throw new Error('再編集情報の形式が正しくありません。'); }
+      if (header.app !== 'LumaStudio PDF' || ![1, 2, 3].includes(header.version)) throw new Error('再編集情報の形式が正しくありません。');
+    }
     const cleanName = path.basename(String(suggestedName || '記入済み.pdf')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
     const result = await dialog.showSaveDialog(mainWindow, {
       title: '編集したPDFを保存',
@@ -443,7 +451,11 @@ function registerIpc() {
       properties: ['showOverwriteConfirmation', 'createDirectory'],
     });
     if (result.canceled || !result.filePath) return false;
-    await fs.writeFile(result.filePath, bytes);
+    await saveNewFile(result.filePath, bytes);
+    if (project) {
+      try { await new SavedEdits(app.getPath('userData')).record(bytes, project); }
+      catch { throw new Error('PDFは保存しましたが、再編集情報を記録できませんでした。作業データを別途保存してください。'); }
+    }
     await inboxWatcher?.markSaved(result.filePath, bytes);
     return true;
   });

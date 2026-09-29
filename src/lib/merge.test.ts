@@ -145,10 +145,13 @@ describe('PDF merge', () => {
       .rejects.toThrow('「over.pdf」を結合できません。結合元の合計が200ページを超えます')
   })
 
-  it('enforces the combined 50MB input limit before parsing sources', async () => {
-    const original = new Uint8Array(25 * 1024 * 1024)
-    const addition = new Uint8Array(25 * 1024 * 1024 + 1)
-    await expect(appendPdfSources(original, [{ name: 'too-large.pdf', bytes: addition }]))
-      .rejects.toThrow('「too-large.pdf」を含めると結合元の合計が50MBを超えます')
+  it('accepts a PDF larger than the former 50MB merge limit', async () => {
+    const source = await makePdf([[100, 100]])
+    const large = new Uint8Array(source.length + 51 * 1024 * 1024)
+    large.set(source)
+    large.fill(37, source.length)
+    const merged = await appendPdfSources(null, [{ name: 'large.pdf', bytes: large }])
+    expect(merged.addedPages).toHaveLength(1)
+    expect(merged.bytes.length).toBeGreaterThan(0)
   })
 })

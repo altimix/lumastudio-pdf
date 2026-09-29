@@ -214,18 +214,12 @@ describe('editable PDF project', () => {
     expect(() => encodeProject(project)).toThrow(/縦位置/)
   })
 
-  it('rejects oversized projects and original PDF inputs before decoding or allocating base64', () => {
+  it('keeps the separate 100MB project limit while accepting PDF sources over 50MB', () => {
     expect(() => decodeProject(new Uint8Array(100 * 1024 * 1024 + 1))).toThrow(/100MB/)
     const project = example()
     project.original = new Uint8Array(50 * 1024 * 1024 + 1)
     project.original.set(encoder.encode('%PDF-1.7\n'))
-    expect(() => encodeProject(project)).toThrow(/50MB/)
-  })
-
-  it('rejects an oversized encoded source before allocating its decoded bytes', () => {
-    const raw = rawExample()
-    raw.original = 'A'.repeat(Math.ceil(50 * 1024 * 1024 / 3) * 4 + 4)
-    expect(() => decodeRaw(raw)).toThrow(/50MB/)
+    expect(encodeProject(project).byteLength).toBeGreaterThan(50 * 1024 * 1024)
   })
 
   it('rejects images over 2 MB', () => {

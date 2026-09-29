@@ -43,7 +43,6 @@ async function startPdfjs(bytes: Uint8Array, password?: string) {
 }
 
 export async function loadPdf(bytes: Uint8Array): Promise<{ document: PDFDocumentProxy; pages: PageInfo[]; signed: boolean }> {
-  if (bytes.byteLength > 100 * 1024 * 1024) throw new Error('100MBまでのPDFを開けます。ファイルを分割してお試しください。')
   // PDF.js transfers its input buffer to the worker. Keep the caller's original intact.
   const task = await startPdfjs(bytes)
   let document: PDFDocumentProxy
@@ -86,7 +85,6 @@ export async function loadPdf(bytes: Uint8Array): Promise<{ document: PDFDocumen
 export async function createEditableCopy(
   bytes: Uint8Array, password?: string, onProgress?: (completed: number, total: number) => void,
 ): Promise<Uint8Array> {
-  if (bytes.byteLength > 50 * 1024 * 1024) throw new EditableCopyError('編集用コピーを作れる原本は50MBまでです。')
   const task = await startPdfjs(bytes, password)
   try {
     let source: PDFDocumentProxy
@@ -100,7 +98,6 @@ export async function createEditableCopy(
     if (source.numPages < 1 || source.numPages > 200) throw new EditableCopyError('編集用コピーは200ページまで作成できます。')
     if (source.isPureXfa) throw new EditableCopyError('XFA専用フォームは正しく画像化できません。元のアプリからPDFとして印刷して開いてください。')
     const output = await PDFDocument.create()
-    let imageDataLength = 0
     for (let index = 0; index < source.numPages; index += 1) {
       const sourcePage = await source.getPage(index + 1)
       const size = sourcePage.getViewport({ scale: 1 })
@@ -115,8 +112,6 @@ export async function createEditableCopy(
       if (!context) throw new EditableCopyError('PDFの描画領域を作成できませんでした。')
       await sourcePage.render({ canvas, canvasContext: context, viewport }).promise
       const imageData = canvas.toDataURL('image/jpeg', 0.9)
-      imageDataLength += imageData.length
-      if (imageDataLength > 68 * 1024 * 1024) throw new EditableCopyError('編集用コピーが50MBを超えるため、ページを分けてお試しください。')
       const image = await output.embedJpg(imageData)
       output.addPage([size.width, size.height]).drawImage(image, { x: 0, y: 0, width: size.width, height: size.height })
       canvas.width = canvas.height = 0
@@ -124,9 +119,7 @@ export async function createEditableCopy(
       onProgress?.(index + 1, source.numPages)
     }
     output.setTitle('LumaStudio PDF 編集用コピー')
-    const result = await output.save()
-    if (result.byteLength > 50 * 1024 * 1024) throw new EditableCopyError('編集用コピーが50MBを超えるため、ページを分けてお試しください。')
-    return result
+    return output.save()
   } finally {
     await task.destroy()
   }
@@ -539,16 +532,12 @@ export async function appendPdfSources(
   additions: { name: string; bytes: Uint8Array }[],
 ): Promise<{ bytes: Uint8Array; originalPageCount: number; addedPages: { sourceName: string; sourcePage: number }[] }> {
   if (additions.length === 0) throw new Error('結合するPDFを1つ以上選択してください。')
-  const maxBytes = 50 * 1024 * 1024
   const sources = [
     ...(original !== null ? [{ name: '編集中のPDF', bytes: original, original: true }] : []),
     ...additions.map((addition) => ({ ...addition, original: false })),
   ]
-  let totalBytes = 0
   for (const source of sources) {
     if (source.bytes.byteLength === 0) throw new Error(`「${source.name}」は空のファイルです。内容のあるPDFを選択してください。`)
-    totalBytes += source.bytes.byteLength
-    if (totalBytes > maxBytes) throw new Error(`「${source.name}」を含めると結合元の合計が50MBを超えます。ファイル数を減らしてお試しください。`)
   }
   const loaded: { name: string; document: PDFDocument }[] = []
   const addedPages: { sourceName: string; sourcePage: number }[] = []
@@ -600,7 +589,6 @@ export async function appendPdfSources(
   } catch {
     throw new Error('結合したPDFを作成できませんでした。ファイル数を減らすか、元のアプリからPDFとして印刷してお試しください。')
   }
-  if (bytes.byteLength > maxBytes) throw new Error('結合後のPDFが50MBを超えます。ファイル数を減らしてお試しください。')
   return { bytes, originalPageCount, addedPages }
 }
 

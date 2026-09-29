@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { validatePdfBytes, watchPrintInbox } = require('./pdf-files.cjs');
+const { validatePdfBytes, readPdf, watchPrintInbox } = require('./pdf-files.cjs');
 
 const pdfA = Buffer.from('%PDF-1.7\nexample A\n%%EOF\n');
 const pdfB = Buffer.from('%PDF-1.7\nexample B\n%%EOF\n');
@@ -23,6 +23,20 @@ test('rejects non-PDF and invalid IPC byte values', () => {
   assert.throws(() => validatePdfBytes([37, 80, 68, 70, 45, -1]));
   assert.throws(() => validatePdfBytes('a PDF path is not accepted'));
   assert.deepEqual(validatePdfBytes(Array.from(pdfA)), pdfA);
+});
+
+test('desktop file reader accepts PDFs above the former 50MB limit', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'luma-large-pdf-'));
+  try {
+    const file = path.join(root, 'large.pdf');
+    const bytes = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(51 * 1024 * 1024, 32), Buffer.from('\n%%EOF\n')]);
+    await fs.writeFile(file, bytes);
+    const loaded = await readPdf(file);
+    assert.equal(loaded.name, 'large.pdf');
+    assert.equal(loaded.data.byteLength, bytes.byteLength);
+  } finally {
+    await fs.rm(root, { recursive: true });
+  }
 });
 
 test('inbox waits for completed bytes, deduplicates and ignores its own saved output', async () => {

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright';
 import { expect } from '@playwright/test';
 import { extractFile } from '@electron/asar';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = process.argv[2] ? path.resolve(process.argv[2]) : path.join(repo, 'release');
@@ -27,7 +27,7 @@ const bundledLicense = path.join(path.dirname(archive), 'LICENSE');
 assert.ok((await fs.readFile(bundledLicense)).equals(await fs.readFile(path.join(repo, 'LICENSE'))),
   '配布アプリ内のGPLライセンス本文が不足または変更されています。');
 // Reject stale builds before starting Electron or its print-inbox watcher.
-for (const source of ['electron/main.cjs', 'electron/preload.cjs', 'electron/inbox-path.cjs', 'server/ai.cjs', 'server/ai-models.cjs', 'server/settings.cjs', 'dist/index.html']) {
+for (const source of ['electron/main.cjs', 'electron/preload.cjs', 'electron/inbox-path.cjs', 'electron/pdf-files.cjs', 'electron/saved-edits.cjs', 'electron/safe-save.cjs', 'server/ai.cjs', 'server/ai-models.cjs', 'server/settings.cjs', 'dist/index.html']) {
   const current = await fs.readFile(path.join(repo, source));
   const bundled = extractFile(archive, path.normalize(source));
   assert.ok(current.equals(bundled), `配布アプリが古いため起動しません。再ビルド・再パッケージしてください: ${source}`);
@@ -254,6 +254,51 @@ try {
   assert.equal(await application.evaluate(() => globalThis.__saveDialogCalls), 1, 'Ctrl/⌘+S must save once.');
   assert.equal((await PDFDocument.load(await fs.readFile(keyboardPdfPath))).getPageCount(), 1);
   console.log(JSON.stringify({ stage: 'keyboard-pdf-saved', platform: process.platform }));
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, keyboardPdfPath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.getByRole('status').filter({ hasText: '保存したPDFの編集を再開しました' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
+  const reopenedPdfPath = path.join(userData, 'reopened-saved.pdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, reopenedPdfPath);
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect.poll(async () => fs.stat(reopenedPdfPath).then(() => true, () => false)).toBe(true);
+  await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
+  const firstSaved = await PDFDocument.load(await fs.readFile(keyboardPdfPath));
+  const secondSaved = await PDFDocument.load(await fs.readFile(reopenedPdfPath));
+  const imageCount = (document) => document.getPage(0).node.Resources().lookup(PDFName.of('XObject'), PDFDict)?.keys().length;
+  assert.equal(imageCount(secondSaved), imageCount(firstSaved), 'Re-saving must not duplicate the visible annotation.');
+  console.log(JSON.stringify({ stage: 'saved-pdf-reopened-editable', platform: process.platform }));
+  const singlePagePath = path.join(userData, 'single-page-saved.pdf');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, singlePagePath);
+  await page.getByRole('button', { name: '1ページ目', exact: true }).click({ button: 'right' });
+  await page.getByRole('menu', { name: 'ページの操作', exact: true })
+    .getByRole('menuitem', { name: 'このページをPDF保存', exact: true }).click();
+  await expect.poll(async () => fs.stat(singlePagePath).then(() => true, () => false)).toBe(true);
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, singlePagePath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.getByRole('status').filter({ hasText: '保存したPDFの編集を再開しました' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(1);
+  console.log(JSON.stringify({ stage: 'single-page-pdf-reopened-editable', platform: process.platform }));
+  const changedPdfPath = path.join(userData, 'externally-changed.pdf');
+  await fs.writeFile(changedPdfPath, Buffer.concat([
+    await fs.readFile(keyboardPdfPath),
+    Buffer.from('\n% changed after saving\n'),
+  ]));
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+  }, changedPdfPath);
+  await clickMenu(application, 'ファイル', 'PDFを開く…');
+  await expect(page.getByTestId('pdf-surface')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^チェック:/ })).toHaveCount(0);
+  console.log(JSON.stringify({ stage: 'changed-pdf-kept-as-completed-page', platform: process.platform }));
 
   // Electron handles this beforeunload itself; Playwright's default CDP
   // auto-dismiss can race the native confirmation and see no JS dialog.

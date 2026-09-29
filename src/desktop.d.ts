@@ -15,16 +15,17 @@ declare global {
       onMenuAction(callback: (action: DesktopMenuAction) => void): () => void;
       onSaveAndClose(callback: (format: "pdf" | "project") => void | Promise<void>): () => void;
       finishCloseSave(saved: boolean): Promise<boolean>;
-      openPdf(): Promise<{ name: string; data: number[] } | null>;
-      openPdfs(): Promise<{ name: string; data: number[] }[]>;
-      openProject(): Promise<{ name: string; data: number[] } | null>;
-      saveProject(data: number[], suggestedName: string): Promise<boolean>;
-      savePdf(data: number[], suggestedName: string): Promise<boolean>;
-      printPdf(data: number[]): Promise<void>;
+      openPdf(): Promise<{ name: string; data: Uint8Array | number[] } | null>;
+      openPdfs(): Promise<{ name: string; data: Uint8Array | number[] }[]>;
+      openProject(): Promise<{ name: string; data: Uint8Array | number[] } | null>;
+      savedPdfProject(digest: string): Promise<Uint8Array | null>;
+      saveProject(data: Uint8Array | number[], suggestedName: string): Promise<boolean>;
+      savePdf(data: Uint8Array | number[], suggestedName: string, editingData?: Uint8Array): Promise<boolean>;
+      printPdf(data: Uint8Array | number[]): Promise<void>;
       onOpenPdf(
         callback: (file: {
           name: string;
-          data: number[];
+          data: Uint8Array | number[];
         }) => void | Promise<void>,
       ): () => void;
       getPrintInbox(): Promise<string>;

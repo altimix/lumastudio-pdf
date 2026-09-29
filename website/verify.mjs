@@ -26,13 +26,13 @@ try {
   assert.match(await desktop.getByRole('heading', { level: 1 }).innerText(), /届いたPDFを、\s*返せる書類に/);
   assert.match(await desktop.locator('.window-topline').innerText(), /v1\.0\.6/);
   assert.match(await desktop.locator('#workspace-caption').innerText(), /v1\.0\.6/);
-  assert.doesNotMatch(await desktop.locator('#workspace-caption').innerText(), /最新版と一部異なります/);
+  assert.match(await desktop.locator('#workspace-caption').innerText(), /画像はv1\.0\.6.*最新版では/);
   assert.equal(await desktop.locator('link[rel="canonical"]').getAttribute('href'), 'https://lumastudiopdf.altimix.jp/');
   assert.equal(await desktop.locator('a.guide-home-link').getAttribute('href'), '/guide/');
   const structured = JSON.parse(await desktop.locator('script[type="application/ld+json"]').textContent() || '{}');
   assert.equal(structured['@type'], 'SoftwareApplication');
   assert.equal(structured.author?.name, '安藤昇');
-  assert.equal(structured.softwareVersion, '1.0.6');
+  assert.equal(structured.softwareVersion, '1.0.7');
   assert.equal(structured.publisher?.name, '株式会社Altimix');
   assert.equal(await desktop.locator('.contact-actions a').first().getAttribute('href'), 'https://altimix.co.jp/contact/');
   assert.equal(await desktop.locator('.contact-actions a').last().getAttribute('href'), 'https://github.com/altimix/lumastudio-pdf/issues');
@@ -41,6 +41,8 @@ try {
   assert.match(await desktop.locator('.feature-list').innerText(), /PDFを左のサムネイル一覧へドロップ/);
   assert.match(await desktop.locator('.feature-list').innerText(), /長方形、楕円・円、三角形、線、二重線はドラッグした大きさで配置/);
   assert.match(await desktop.locator('.feature-list').innerText(), /日本語メニュー/);
+  assert.match(await desktop.locator('.feature-list').innerText(), /PDFの容量制限を撤廃/);
+  assert.match(await desktop.locator('.feature-list').innerText(), /保存したPDFを再編集/);
   assert.match(await desktop.locator('.feature-list').innerText(), /クリックした位置を中心に配置/);
   assert.match(await desktop.locator('.faq-list').innerText(), /最大化した画面を元に戻す/);
   await desktop.getByText('使い方や最新版はどこで確認できますか？', { exact: true }).click();
@@ -53,11 +55,11 @@ try {
     await image.scrollIntoViewIfNeeded();
     assert.equal(await image.evaluate(async element => { await element.decode(); return element.naturalWidth > 100; }), true, `${selector} did not load`);
   }
-  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v1.0.6/';
+  const release = 'https://github.com/altimix/lumastudio-pdf/releases/download/v1.0.7/';
   const downloads = {
-    'windows-portable': 'LumaStudio-PDF-1.0.6-windows-x64-portable.exe',
-    'mac-arm64': 'LumaStudio-PDF-1.0.6-macos-arm64.zip',
-    'mac-x64': 'LumaStudio-PDF-1.0.6-macos-x64.zip',
+    'windows-portable': 'LumaStudio-PDF-1.0.7-windows-x64-portable.exe',
+    'mac-arm64': 'LumaStudio-PDF-1.0.7-macos-arm64.zip',
+    'mac-x64': 'LumaStudio-PDF-1.0.7-macos-x64.zip',
     'mac-guide': 'README-Mac.txt',
     checksums: 'SHA256SUMS.txt',
     license: 'LICENSE.txt',
@@ -118,6 +120,7 @@ try {
   const privacyResponse = await fetch(new URL('/privacy/', origin));
   const privacy = await privacyResponse.text();
   assert.match(privacy, /AIを明示実行した場合/);
+  assert.match(privacy, /editable-pdfs/);
   assert.match(privacy, /https:\/\/altimix\.co\.jp\/contact\//);
   assert.match(privacyResponse.headers.get('cache-control') || '', /(?:^|,)\s*no-transform(?:,|$)/i);
   const sitemap = await (await fetch(new URL('/sitemap.xml', origin))).text();
