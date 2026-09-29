@@ -1103,7 +1103,8 @@ export default function App() {
     });
   });
   const restoreProject = async (bytes: Uint8Array, fromSavedPdf = false, savedPdfName?: string): Promise<boolean> => {
-    if (busy) return false;
+    // openBytes already waits for the current operation; React busy state can lag behind that ref.
+    if (busy && !fromSavedPdf) return false;
     if (
       dirty && !fromSavedPdf &&
       !confirm(
