@@ -12,8 +12,10 @@ test('only an exact locally saved PDF hash retrieves its editing data', async ()
     const pdf = Buffer.from('%PDF-1.7\nexample\n%%EOF\n');
     const project = Buffer.from(JSON.stringify({ app: 'LumaStudio PDF', version: 3, original: pdf.toString('base64'), annotations: [] }));
     assert.equal(await saved.read(sha256(pdf)), null);
-    assert.equal(await saved.record(pdf, project), sha256(pdf));
-    assert.deepEqual(JSON.parse((await saved.read(sha256(pdf))).toString()), JSON.parse(project.toString()));
+    assert.equal(await saved.record(pdf, project, 'actually-saved.pdf'), sha256(pdf));
+    assert.deepEqual(JSON.parse((await saved.read(sha256(pdf))).toString()), {
+      ...JSON.parse(project.toString()), filename: 'actually-saved.pdf',
+    });
     assert.equal(await saved.read(sha256(Buffer.concat([pdf, Buffer.from('changed')]))), null);
     assert.equal(await saved.read('../secrets'), null);
     await saved.record(Buffer.concat([pdf, Buffer.from('second')]), project);

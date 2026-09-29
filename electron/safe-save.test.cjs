@@ -36,3 +36,18 @@ test('editable project replacement completes before the old file is replaced', a
     await fs.rm(root, { recursive: true });
   }
 });
+
+test('hardlink-free volumes still save without replacing an existing file', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'luma-no-hardlink-'));
+  const unavailableLink = async () => { const error = new Error('hardlinks unavailable'); error.code = 'ENOTSUP'; throw error; };
+  try {
+    const fresh = path.join(root, 'fresh.pdf');
+    await saveNewFile(fresh, Buffer.from('complete PDF'), { link: unavailableLink });
+    assert.equal(await fs.readFile(fresh, 'utf8'), 'complete PDF');
+    await assert.rejects(saveNewFile(fresh, Buffer.from('new bytes'), { link: unavailableLink }), /上書きできません/);
+    assert.equal(await fs.readFile(fresh, 'utf8'), 'complete PDF');
+    assert.deepEqual(await fs.readdir(root), ['fresh.pdf']);
+  } finally {
+    await fs.rm(root, { recursive: true });
+  }
+});

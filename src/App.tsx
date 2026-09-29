@@ -1004,7 +1004,12 @@ export default function App() {
         prepared.pages,
         prepared.annotations,
       );
-      const name = filename.replace(/\.pdf$/i, "") + "_記入済.pdf";
+      const stem = filename.replace(/\.pdf$/i, "");
+      const previous = stem.match(/^(.*_記入済)(?:_([0-9]+))?$/u);
+      const next = previous ? Number(previous[2] ?? "1") + 1 : 0;
+      const name = previous && Number.isSafeInteger(next)
+        ? `${previous[1]}_${next}.pdf`
+        : `${stem}_記入済.pdf`;
       if (window.lumaDesktop) {
         const editingData = encodeProject({ filename, original: original.current, pages: prepared.pages, annotations: prepared.annotations }, true);
         if (!(await window.lumaDesktop.savePdf(data, name, editingData))) return "canceled";

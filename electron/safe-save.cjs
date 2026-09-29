@@ -2,8 +2,36 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-/** Publish a completed file atomically and refuse to replace any existing file. */
-async function saveNewFile(target, bytes) {
+const NO_HARDLINK = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV']);
+const existingFileError = () => new Error('既存のファイルは上書きできません。別の名前で保存してください。');
+
+async function saveWithoutHardlink(target, bytes) {
+  let handle;
+  let identity;
+  try {
+    handle = await fs.open(target, 'wx', 0o600);
+    const stat = await handle.stat();
+    identity = { dev: stat.dev, ino: stat.ino };
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } catch (error) {
+    if (handle) {
+      await handle.close().catch(() => {});
+      handle = null;
+      const current = await fs.lstat(target).catch(() => null);
+      if (current && identity && current.dev === identity.dev && current.ino === identity.ino) {
+        await fs.unlink(target).catch(() => {});
+      }
+    }
+    if (error.code === 'EEXIST') throw existingFileError();
+    throw error;
+  } finally {
+    if (handle) await handle.close();
+  }
+}
+
+/** Publish a completed file without replacing any existing file. */
+async function saveNewFile(target, bytes, { link = fs.link } = {}) {
   const temporary = path.join(path.dirname(target), `.lumastudio-pdf-${randomUUID()}.tmp`);
   let handle;
   try {
@@ -13,10 +41,13 @@ async function saveNewFile(target, bytes) {
     await handle.close();
     handle = null;
     try {
-      await fs.link(temporary, target);
+      await link(temporary, target);
     } catch (error) {
-      if (error.code === 'EEXIST') throw new Error('既存のファイルは上書きできません。別の名前で保存してください。');
-      throw error;
+      if (error.code === 'EEXIST') throw existingFileError();
+      if (!NO_HARDLINK.has(error.code)) throw error;
+      // Some external and removable volumes cannot hardlink. Exclusive create
+      // still protects existing files; remove our incomplete target on failure.
+      await saveWithoutHardlink(target, bytes);
     }
   } finally {
     if (handle) await handle.close();
