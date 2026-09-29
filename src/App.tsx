@@ -1012,7 +1012,9 @@ export default function App() {
         : `${stem}_記入済.pdf`;
       if (window.lumaDesktop) {
         const editingData = encodeProject({ filename, original: original.current, pages: prepared.pages, annotations: prepared.annotations }, true);
-        if (!(await window.lumaDesktop.savePdf(data, name, editingData))) return "canceled";
+        const saved = await window.lumaDesktop.savePdf(data, name, editingData);
+        if (!saved) return "canceled";
+        if (typeof saved === "object") setFilename(saved.name);
       } else {
         const blob = new Blob([new Uint8Array(data)], {
           type: "application/pdf",

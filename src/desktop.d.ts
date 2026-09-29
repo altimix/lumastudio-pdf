@@ -20,7 +20,7 @@ declare global {
       openProject(): Promise<{ name: string; data: Uint8Array | number[] } | null>;
       savedPdfProject(digest: string): Promise<Uint8Array | null>;
       saveProject(data: Uint8Array | number[], suggestedName: string): Promise<boolean>;
-      savePdf(data: Uint8Array | number[], suggestedName: string, editingData?: Uint8Array): Promise<boolean>;
+      savePdf(data: Uint8Array | number[], suggestedName: string, editingData?: Uint8Array): Promise<boolean | { name: string }>;
       printPdf(data: Uint8Array | number[]): Promise<void>;
       onOpenPdf(
         callback: (file: {

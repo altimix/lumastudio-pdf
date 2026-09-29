@@ -252,6 +252,7 @@ try {
   await page.keyboard.press('ControlOrMeta+s');
   await expect(page.locator('.unsaved')).toHaveCount(0);
   assert.equal(await application.evaluate(() => globalThis.__saveDialogCalls), 1, 'Ctrl/⌘+S must save once.');
+  await expect(page.locator('.document-name')).toContainText('keyboard-saved.pdf');
   assert.equal((await PDFDocument.load(await fs.readFile(keyboardPdfPath))).getPageCount(), 1);
   console.log(JSON.stringify({ stage: 'keyboard-pdf-saved', platform: process.platform }));
   await application.evaluate(({ dialog }, filePath) => {

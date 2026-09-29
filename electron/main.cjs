@@ -457,7 +457,7 @@ function registerIpc() {
       catch { throw new Error('PDFは保存しましたが、再編集情報を記録できませんでした。作業データを別途保存してください。'); }
     }
     await inboxWatcher?.markSaved(result.filePath, bytes);
-    return true;
+    return { name: path.basename(result.filePath) };
   });
   ipcMain.handle('luma:print-pdf', async (event, data) => {
     assertMainSender(event);
