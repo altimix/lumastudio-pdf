@@ -25,4 +25,20 @@ Google Search Console の `https://lumastudiopdf.altimix.jp/` URLプレフィッ
 
 授業プリントや校務の書類に文字・チェック・手書きを加える「PDF追記ソフト」として紹介します。競合との比較や導入実績の推測はせず、元の本文の書き換え・OCRの対象外、AIの外部送信、同じ端末での再編集条件を明記します。
 
-学校向けの画面例は、v1.0.7の配布アプリを `release/` に展開したWindowsまたはMacで `node website/capture-school.mjs` を実行すると再生成できます。必要なら配布アプリのディレクトリを第1引数で渡します。架空のプリントをその場で生成し、実際のUIで文字・チェック・蛍光ペンを配置して保存した画面を撮影します。利用者のデータとは別の一時領域と受信箱を使い、AIは呼びません。生成画像以外の見本文書や一時アプリデータは残しません。
+学校向けの画面例は、electron-builderが生成する展開済みパッケージを使って再撮影できます。スクリプトは起動したアプリがv1.0.7であることを確認します。アプリのバージョンが1.0.7のこのソースから、WindowsまたはMacで次を実行します。
+
+```sh
+npm ci
+npm run package:dir
+node website/capture-school.mjs
+```
+
+スクリプトの第1引数は **electron-builderの出力ルート** です。省略時はリポジトリ直下の `release/` を使います。出力ルート内には、実行するOS・CPUに対応する次の配置が必要です。
+
+- Windows: `win-unpacked/LumaStudio PDF.exe`
+- Apple Silicon Mac: `mac-arm64/LumaStudio PDF.app/Contents/MacOS/LumaStudio PDF`
+- Intel Mac: `mac/LumaStudio PDF.app/Contents/MacOS/LumaStudio PDF`
+
+出力先を変えた場合の例は `node website/capture-school.mjs /path/to/electron-builder-output` です。公開Windows版のポータブルEXEや、実行ファイル・`.app` 自体のパスは引数に指定できません。上のビルド手順で作成した出力ルートを指定してください。
+
+架空のプリントをその場で生成し、実際のUIで文字・チェック・蛍光ペンを配置して保存した画面を撮影します。利用者のデータとは別の一時領域と受信箱を使い、AIは呼びません。生成画像以外の見本文書や一時アプリデータは残しません。
