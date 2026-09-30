@@ -20,3 +20,25 @@ npm run deploy:check --prefix website
 アプリ配布物は公開 [GitHub Release v1.0.7](https://github.com/altimix/lumastudio-pdf/releases/tag/v1.0.7) のポータブルEXE・Mac ZIPに直接リンクします。LumaStudioシリーズの共通問い合わせ窓口は `https://altimix.co.jp/contact/` です。公開作業時は `VERIFY_DOWNLOADS=1` を設定してリンクを検査します。
 
 Google Search Console の `https://lumastudiopdf.altimix.jp/` URLプレフィックス用確認タグは `public/index.html` の `<head>` に置き、所有権を維持するため公開後も残します。`sitemap.xml` にはトップ・使い方・データの扱いの正規URLを載せ、`robots.txt` から参照します。検索への掲載や順位はGoogleの判断で決まるため、Search Consoleの実際の検査結果を確認します。
+
+## 学校向けの紹介と画面例
+
+授業プリントや校務の書類に文字・チェック・手書きを加える「PDF追記ソフト」として紹介します。競合との比較や導入実績の推測はせず、元の本文の書き換え・OCRの対象外、AIの外部送信、同じ端末での再編集条件を明記します。
+
+学校向けの画面例は、electron-builderが生成する展開済みパッケージを使って再撮影できます。スクリプトは起動したアプリがv1.0.7であることを確認します。アプリのバージョンが1.0.7のこのソースから、WindowsまたはMacで次を実行します。
+
+```sh
+npm ci
+npm run package:dir
+node website/capture-school.mjs
+```
+
+スクリプトの第1引数は **electron-builderの出力ルート** です。省略時はリポジトリ直下の `release/` を使います。出力ルート内には、実行するOS・CPUに対応する次の配置が必要です。
+
+- Windows: `win-unpacked/LumaStudio PDF.exe`
+- Apple Silicon Mac: `mac-arm64/LumaStudio PDF.app/Contents/MacOS/LumaStudio PDF`
+- Intel Mac: `mac/LumaStudio PDF.app/Contents/MacOS/LumaStudio PDF`
+
+出力先を変えた場合の例は `node website/capture-school.mjs /path/to/electron-builder-output` です。公開Windows版のポータブルEXEや、実行ファイル・`.app` 自体のパスは引数に指定できません。上のビルド手順で作成した出力ルートを指定してください。
+
+架空のプリントをその場で生成し、実際のUIで文字・チェック・蛍光ペンを配置して保存した画面を撮影します。利用者のデータとは別の一時領域と受信箱を使い、AIは呼びません。生成画像以外の見本文書や一時アプリデータは残しません。

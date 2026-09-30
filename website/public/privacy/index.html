@@ -19,8 +19,9 @@
     <main class="shell privacy-page" id="main">
       <p class="section-label">LumaStudioシリーズ</p>
       <h1>書類とデータの扱い</h1>
-      <p class="privacy-lead">PDFや印鑑を扱うアプリなので、端末内に残るものと、AIを使ったときに送られるものを分けて説明します。最終更新：2026年9月29日。</p>
-      <section><h2>通常の編集</h2><p>PDFの表示、文字・画像・印鑑の配置、ページ整理、保存は利用者の端末内で行います。公式サイトへPDFをアップロードする機能はありません。完成版PDFと作業データは、利用者が選んだ場所へ保存します。元のPDFや既存のファイルは自動上書きしません。</p></section>
+      <p class="privacy-lead">PDFや印鑑を扱うアプリなので、端末内に残るものと、AIを使ったときに送られるものを分けて説明します。最終更新：2026年9月30日。</p>
+      <section><h2>学校の共有端末で使う場合</h2><p>学校や教育委員会のソフト利用・データ管理のルールに沿ってお使いください。保存したPDFだけでなく、再編集のための元PDFや編集情報、登録した印鑑も端末に残ります。個人情報を含む書類の保存先や削除方法を確認し、任意のAI機能を使う場合は外部送信の可否も確認してください。</p></section>
+      <section><h2>通常の追記</h2><p>PDFの表示、文字・画像・印鑑の配置、ページ整理、保存は利用者の端末内で行います。公式サイトへPDFをアップロードする機能はありません。完成版PDFと作業データは、利用者が選んだ場所へ保存します。元のPDFや既存のファイルは自動上書きしません。</p></section>
       <section><h2>保存したPDFの再編集</h2><p>v1.0.7以降のデスクトップ版で未署名PDFを保存すると、後で編集を再開するため、元PDFのコピーと配置した文字・印鑑などの編集情報を端末のアプリデータ領域の <code>editable-pdfs</code> フォルダーにも保存します。内容が同じ元PDFは重複保存しません。保存したPDFの内容が完全に一致する場合だけ編集情報を読み込みます。これらは暗号化されず、アプリや配布ファイルを削除しても自動では消えません。共有端末では不要になったPDF・作業データとともに、このフォルダーも削除してください。削除すると保存PDFの配置済み要素は再編集できなくなります。</p></section>
       <section><h2>端末に保存する設定</h2><p>登録した氏名・住所・口座情報や印鑑画像・印鑑サイズは、アプリのローカル保存領域に残ります。この領域は書類用の暗号化保管庫ではありません。共有端末では、アプリ内の登録情報・印鑑を削除し、保存したPDFや作業データも必要に応じて削除してください。ポータブルEXEやMacアプリを削除するだけでは、設定は自動削除されません。</p></section>
       <section><h2>AIを明示実行した場合</h2><p>AI自動記入を選んだ場合だけ、選択したページの画像、登録した記入用情報、選択した印鑑の名前と有効状態をOpenAIへ送信します。配置済みの印影はページ画像に写る場合があります。未配置の印鑑画像やAPIキーはモデルへの入力に含めません。APIの利用料がかかり、提案内容は保存前に確認・修正できます。リクエストには <code>store: false</code> を指定しますが、提供者によるすべての保持がなくなることを意味しません。通常編集はAI設定なしで使えます。</p></section>
@@ -28,6 +29,6 @@
       <section><h2>Webサイトと問い合わせ</h2><p>この公式サイトには、書類のアップロード欄、会員登録、アクセス解析スクリプトを設けていません。問い合わせは動画編集版Luma Studioと共通の<a href="https://altimix.co.jp/contact/" target="_blank" rel="noopener">株式会社Altimixの窓口</a>へ。不具合や機能提案は<a href="https://github.com/altimix/lumastudio-pdf/issues" target="_blank" rel="noopener">GitHub Issues</a>も利用できます。公開Issueには実際の書類、印影、秘密鍵、APIキーを添付しないでください。</p></section>
       <p class="privacy-more">詳しいAI送信条件は<a href="https://github.com/altimix/lumastudio-pdf/blob/main/docs/ai.md" target="_blank" rel="noopener">AI機能の説明</a>、電子署名の制約は<a href="https://github.com/altimix/lumastudio-pdf/blob/main/docs/signatures.md" target="_blank" rel="noopener">署名の説明</a>をご覧ください。</p>
     </main>
-    <footer class="site-footer"><div class="shell footer-main"><div><a class="brand" href="/"><img src="/assets/favicon.svg" alt="" width="34" height="34"><span>LumaStudio <strong>PDF</strong></span></a><p>LumaStudioシリーズ。書類の仕上げを、もっと手軽に。</p></div><nav aria-label="フッターナビゲーション"><a href="/">トップ</a><a href="/guide/">使い方</a><a href="https://altimix.co.jp/contact/" target="_blank" rel="noopener">お問い合わせ</a><a href="https://github.com/altimix/lumastudio-pdf" target="_blank" rel="noopener">GitHubでソースを見る</a></nav></div><div class="shell footer-bottom"><span>© 2026 株式会社Altimix</span><span>Windows・Mac対応 ／ GPL-3.0-only</span></div></footer>
+    <footer class="site-footer"><div class="shell footer-main"><div><a class="brand" href="/"><img src="/assets/favicon.svg" alt="" width="34" height="34"><span>LumaStudio <strong>PDF</strong></span></a><p>学校のPDFに、ひとこと書き足す。</p></div><nav aria-label="フッターナビゲーション"><a href="/">トップ</a><a href="/guide/">使い方</a><a href="https://altimix.co.jp/contact/" target="_blank" rel="noopener">お問い合わせ</a><a href="https://github.com/altimix/lumastudio-pdf" target="_blank" rel="noopener">GitHubでソースを見る</a></nav></div><div class="shell footer-bottom"><span>© 2026 株式会社Altimix</span><span>Windows・Mac対応 ／ GPL-3.0-only</span></div></footer>
   </body>
 </html>
