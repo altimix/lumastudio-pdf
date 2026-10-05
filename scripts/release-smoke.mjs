@@ -59,6 +59,7 @@ try {
   assert.equal(path.resolve(packaged.userData), path.resolve(userData));
   assert.equal(packaged.signPdf, 'function');
   const page = await application.firstWindow({ timeout: 30_000 });
+  page.setDefaultTimeout(30_000);
   const fontRequests = [];
   page.on('request', (request) => { if (/\.woff2?(?:\?|$)/.test(request.url())) fontRequests.push(request.url()); });
   page.on('pageerror', (error) => errors.push(error.message));
@@ -205,6 +206,9 @@ try {
   console.log(JSON.stringify({ stage: 'pen-input-complete', platform: process.platform, inkAnnotations: await page.getByRole('button', { name: /^ペン:/ }).count() }));
   await expect(page.getByRole('button', { name: /^ペン:/ })).toBeVisible();
   console.log(JSON.stringify({ stage: 'pen-rendered', platform: process.platform }));
+  await page.getByRole('button', { name: '選択・移動', exact: true }).click();
+  await page.getByRole('button', { name: '文字: 同梱フォントの確認', exact: true }).click();
+  await page.getByLabel('文字の向き', { exact: true }).selectOption('vertical-rl');
   const projectPath = path.join(userData, 'ink-smoke.lumapdf');
   await application.evaluate(({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
@@ -212,15 +216,17 @@ try {
   await clickMenu(application, 'ファイル', '作業データを保存…');
   await expect(page.getByRole('status').filter({ hasText: '編集を再開できる作業データを保存しました' })).toBeVisible();
   const savedProject = JSON.parse(await fs.readFile(projectPath, 'utf8'));
-  assert.equal(savedProject.version, 3);
+  assert.equal(savedProject.version, 4);
+  assert.ok(savedProject.annotations.some(annotation => annotation.type === 'text' && annotation.writingMode === 'vertical-rl'));
   assert.ok(savedProject.annotations.some(annotation => annotation.type === 'pen'));
-  const unsupportedVersion = Array.from(new TextEncoder().encode(JSON.stringify({ ...savedProject, version: 4 })));
+  const unsupportedVersion = Array.from(new TextEncoder().encode(JSON.stringify({ ...savedProject, version: 5 })));
   await assert.rejects(
     page.evaluate(data => window.lumaDesktop.saveProject(data, 'unsupported.lumapdf'), unsupportedVersion),
     /対応していない作業データです。/,
   );
-  console.log(JSON.stringify({ stage: 'project-v3-saved', platform: process.platform }));
+  console.log(JSON.stringify({ stage: 'project-v4-saved', platform: process.platform }));
   await page.screenshot({ path: path.join(repo, 'tmp', `release-smoke-${process.platform}.png`), fullPage: true });
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
@@ -250,6 +256,12 @@ try {
   await page.getByRole('button', { name: 'チェック', exact: true }).click();
   await page.getByTestId('pdf-surface').click({ position: { x: 120, y: 190 } });
   await expect(page.locator('.unsaved')).toHaveCount(1);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await page.getByLabel('文字の向き', { exact: true }).selectOption('vertical-rl');
+  await page.getByLabel('記入する文字', { exact: true }).fill('縦書きの再開');
+  await page.getByTestId('pdf-surface').click({ position: { x: 260, y: 210 } });
+  await expect(page.getByRole('button', { name: '文字: 縦書きの再開', exact: true }).locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  await expect(page.locator('.busy-indicator')).toHaveCount(0);
   await page.keyboard.press('ControlOrMeta+s');
   await expect(page.locator('.unsaved')).toHaveCount(0);
   assert.equal(await application.evaluate(() => globalThis.__saveDialogCalls), 1, 'Ctrl/⌘+S must save once.');
@@ -291,6 +303,15 @@ try {
   const secondSaved = await PDFDocument.load(await fs.readFile(reopenedPdfPath));
   const imageCount = (document) => document.getPage(0).node.Resources().lookup(PDFName.of('XObject'), PDFDict)?.keys().length;
   assert.equal(imageCount(secondSaved), imageCount(firstSaved), 'Re-saving must not duplicate the visible annotation.');
+  await page.getByRole('button', { name: '文字: 縦書きの再開', exact: true }).dblclick();
+  await expect(input).toHaveCSS('writing-mode', 'vertical-rl');
+  await input.fill('縦書きの再編集');
+  await input.press('ControlOrMeta+Enter');
+  await application.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, path.join(userData, 'vertical-resaved.pdf'));
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.locator('.unsaved')).toHaveCount(0);
   console.log(JSON.stringify({ stage: 'saved-pdf-reopened-editable', platform: process.platform }));
   const singlePagePath = path.join(userData, 'single-page-saved.pdf');
   await application.evaluate(({ dialog }, filePath) => {
@@ -388,7 +409,16 @@ try {
   assert.equal((await PDFDocument.load(await fs.readFile(closePdfPath))).getPageCount(), 1);
   console.log(JSON.stringify({ stage: 'save-and-close-complete', platform: process.platform }));
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, projectV2Saved: true, stampSizeRemembered: true, keyboardPdfSaved: true, canceledClosePreserved: true, pdfCloseSaved: true, externalApiCalls: 0, physicalPrintTested: false }));
+  console.log(JSON.stringify({ result: 'passed', platform: process.platform, arch: process.arch, isPackaged: packaged.isPackaged, windowRestoreTested: process.platform === 'win32', nativeFullScreenTested: process.platform === 'win32', windowStateBridge: true, sampleRendered: true, bundledFontLoaded: true, shapeEditing: true, penDrawing: true, projectV4Saved: true, verticalPdfReopened: true, stampSizeRemembered: true, keyboardPdfSaved: true, canceledClosePreserved: true, pdfCloseSaved: true, externalApiCalls: 0, physicalPrintTested: false }));
+} catch (error) {
+  if (application) {
+    const page = application.windows()[0];
+    if (page && !page.isClosed()) {
+      console.error(JSON.stringify({ alerts: await page.getByRole('alert').allTextContents(), statuses: await page.getByRole('status').allTextContents(), saveCalls: await application.evaluate(() => globalThis.__saveDialogCalls) }));
+      await page.screenshot({ path: path.join(repo, 'tmp', 'release-smoke-failure.png') }).catch(() => {});
+    }
+  }
+  throw error;
 } finally {
   if (application && application.process().exitCode === null) {
     let closeTimer;

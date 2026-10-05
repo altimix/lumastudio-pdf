@@ -3,6 +3,7 @@ import '@fontsource-variable/noto-serif-jp'
 import '@fontsource-variable/m-plus-1'
 import '@fontsource/biz-udgothic/400.css'
 import '@fontsource/biz-udgothic/700.css'
+import { verticalTextSize } from './vertical-text'
 import type { Annotation, FontFamilyId } from './types'
 
 export const DEFAULT_FONT_FAMILY: FontFamilyId = 'noto-sans-jp'
@@ -24,7 +25,7 @@ const FAMILY_NAMES: Record<Exclude<FontFamilyId, 'legacy'>, string> = {
 }
 const LEGACY_FAMILY = '"Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif'
 type TextStyle = Pick<Annotation, 'fontFamily' | 'fontSize' | 'fontWeight' | 'fontStyle'>
-type TextLayout = TextStyle & Pick<Annotation, 'text' | 'width'>
+type TextLayout = TextStyle & Pick<Annotation, 'text' | 'width' | 'writingMode'>
 
 /** Missing family belongs to older editable projects and retains its old face. */
 export function fontCssFamily(id?: FontFamilyId): string {
@@ -142,6 +143,7 @@ export function underlineOffset(context: CanvasRenderingContext2D, text: string,
 /** Call ensureTextFont before the first measurement for a selected family. */
 export function measureTextHeight(annotation: TextLayout & Pick<Annotation, 'underline'>): number {
   const fontSize = annotation.fontSize ?? 16
+  if (annotation.writingMode === 'vertical-rl') return verticalTextSize(annotation.text || '', fontSize).height
   const context = document.createElement('canvas').getContext('2d')
   if (!context) return Math.max(fontSize * 1.4 + 6, (annotation.text || '').split('\n').length * fontSize * 1.4 + 6)
   context.font = textFontCss(annotation)
@@ -153,9 +155,23 @@ export function measureTextHeight(annotation: TextLayout & Pick<Annotation, 'und
 }
 
 /** Refit after the requested glyphs arrive, including an immediate IME commit. */
-export async function resolveTextGeometry(annotation: Annotation, pageHeight: number): Promise<Annotation> {
+export function fitTextGeometry(annotation: Annotation, pageHeight: number, pageWidth: number): Annotation {
   if (annotation.type !== 'text') return annotation
-  await ensureTextFont(annotation)
+  if (annotation.writingMode === 'vertical-rl') {
+    const size = verticalTextSize(annotation.text || '', annotation.fontSize || 16)
+    const width = Math.min(pageWidth, Math.max(annotation.width, size.width))
+    const height = Math.min(pageHeight, Math.max(annotation.height, size.height))
+    // Keep the first (rightmost) column in place as new columns grow leftward.
+    const x = Math.max(0, Math.min(pageWidth - width, annotation.x + annotation.width - width))
+    const y = Math.max(0, Math.min(pageHeight - height, annotation.y))
+    return { ...annotation, x, y, width, height }
+  }
   const height = Math.min(pageHeight - annotation.y, Math.max(annotation.height, measureTextHeight(annotation)))
   return height === annotation.height ? annotation : { ...annotation, height }
+}
+
+export async function resolveTextGeometry(annotation: Annotation, pageHeight: number, pageWidth: number): Promise<Annotation> {
+  if (annotation.type !== 'text') return annotation
+  await ensureTextFont(annotation)
+  return fitTextGeometry(annotation, pageHeight, pageWidth)
 }

@@ -15,6 +15,7 @@ import {
   fontCssFamily,
   isTextFontReady,
   measureTextHeight,
+  fitTextGeometry,
 } from "../lib/fonts";
 import {
   pointOnPage,
@@ -187,16 +188,9 @@ function textWithHeight(
   annotation: Annotation,
   text: string,
   pageHeight: number,
+  pageWidth: number,
 ): Annotation {
-  return {
-    ...annotation,
-    text,
-    color: annotation.color || "#000000",
-    height: Math.min(
-      pageHeight - annotation.y,
-      Math.max(annotation.height, measureTextHeight({ ...annotation, text })),
-    ),
-  };
+  return fitTextGeometry({ ...annotation, text, color: annotation.color || "#000000" }, pageHeight, pageWidth);
 }
 
 export function PdfPage({
@@ -319,7 +313,7 @@ export function PdfPage({
       const fontReady = isTextFontReady(textDraft);
       changeDraft({
         annotation: fontReady
-          ? textWithHeight(textDraft, textDraft.text || "", page.height)
+          ? textWithHeight(textDraft, textDraft.text || "", page.height, page.width)
           : textDraft,
         original: null,
         fontReady,
@@ -341,6 +335,7 @@ export function PdfPage({
             pending.annotation,
             pending.annotation.text || "",
             page.height,
+            page.width,
           ),
           fontReady: true,
         });
@@ -371,7 +366,7 @@ export function PdfPage({
         .then(() => {
           const latest = draftRef.current;
           if (cancelled || !latest || latest.annotation.id !== requested.id || latest.annotation.text !== requested.text) return;
-          changeDraft({ ...latest, annotation: textWithHeight(latest.annotation, requested.text || "", page.height) });
+          changeDraft({ ...latest, annotation: textWithHeight(latest.annotation, requested.text || "", page.height, page.width) });
         })
         .catch((error: unknown) => { if (!cancelled) onError(String(error)); });
     }, 100);
@@ -579,6 +574,7 @@ export function PdfPage({
         next.height = height;
       }
     }
+    if (next.type === "text" && next.writingMode === "vertical-rl") Object.assign(next, fitTextGeometry(next, page.height, page.width));
     previewRef.current = next;
     setPreview(next);
   };
@@ -879,10 +875,16 @@ export function PdfPage({
                     : "フォントを読み込み中…"
               }
               value={draft.annotation.text || ""}
+              wrap={draft.annotation.writingMode === "vertical-rl" ? "off" : "soft"}
               spellCheck={false}
               maxLength={3000}
               disabled={readOnly || !draft.fontReady}
               style={{
+                writingMode: draft.annotation.writingMode || "horizontal-tb",
+                textOrientation: "upright",
+                whiteSpace: draft.annotation.writingMode === "vertical-rl" ? "pre" : undefined,
+                overflowWrap: draft.annotation.writingMode === "vertical-rl" ? "normal" : undefined,
+                wordBreak: draft.annotation.writingMode === "vertical-rl" ? "normal" : undefined,
                 fontFamily: fontCssFamily(draft.annotation.fontFamily),
                 fontSize: (draft.annotation.fontSize || 16) * scale,
                 fontWeight: draft.annotation.fontWeight || 400,
@@ -902,6 +904,7 @@ export function PdfPage({
                     draftRef.current.annotation,
                     event.target.value,
                     page.height,
+                    page.width,
                   ),
                 });
               }}

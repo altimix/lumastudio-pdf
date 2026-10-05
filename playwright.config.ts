@@ -18,6 +18,7 @@ export default defineConfig({
     { name: 'editable-projects', testMatch: /project\.spec\.ts$/ },
     { name: 'shape-geometry', testMatch: /shape-geometry\.spec\.ts$/ },
     { name: 'signature', testMatch: /signature\.spec\.ts$/ },
+    { name: 'vertical-text', testMatch: /vertical-text\.spec\.ts$/, use: { baseURL: sourceURL } },
     { name: 'typography', testMatch: /typography\.spec\.ts$/, use: { baseURL: sourceURL } },
   ],
   // Shared CI Windows hosts can stall during font/worker decoding and tracing.
