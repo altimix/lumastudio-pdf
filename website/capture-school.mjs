@@ -1,4 +1,4 @@
-// Recreate the website's fictional school example in the packaged v1.0.7 app.
+// Recreate the website's fictional school example in the packaged v1.0.8 app.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -30,7 +30,7 @@ try {
     BrowserWindow.getAllWindows()[0].setContentSize(1600, 900);
     return { version: app.getVersion(), packaged: app.isPackaged, userData: app.getPath('userData') };
   });
-  assert.equal(actual.version, '1.0.7');
+  assert.equal(actual.version, '1.0.8');
   assert.equal(actual.packaged, true);
   assert.equal(path.resolve(actual.userData), path.resolve(isolated));
   await page.context().route('https://api.openai.com/**', route => route.abort());
@@ -83,6 +83,7 @@ try {
   await page.getByTestId('pdf-input').setInputFiles({ name: '校外学習の準備メモ（見本）.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
   const surface = page.getByTestId('pdf-surface');
   await expect(surface).toBeVisible();
+  await page.getByRole('button', { name: 'ページ全体に合わせる', exact: true }).click();
   console.log('Fictional worksheet opened');
   const point = async (x, y) => {
     const box = await surface.boundingBox();
@@ -97,6 +98,11 @@ try {
   };
   await addText('8:40に集合', 155, 229);
   await addText('歩きやすい靴で来ましょう。', 65, 560);
+  await page.getByRole('button', { name: '文字を記入', exact: true }).click();
+  await page.getByLabel('文字の向き', { exact: true }).selectOption('vertical-rl');
+  const size = page.getByRole('spinbutton', { name: '文字サイズ', exact: true });
+  await size.fill('20'); await size.press('Enter');
+  await addText('雨天も実施', 480, 610);
   await page.getByRole('button', { name: 'チェック', exact: true }).click();
   const check = await point(65.5, 330); await page.mouse.click(check.x, check.y);
   await page.getByRole('button', { name: '蛍光ペン', exact: true }).click();
@@ -104,7 +110,7 @@ try {
   await page.mouse.move(from.x, from.y); await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 10 }); await page.mouse.up();
   await page.getByRole('button', { name: '選択・移動', exact: true }).click();
-  await expect(page.locator('.annotation')).toHaveCount(4);
+  await expect(page.locator('.annotation')).toHaveCount(5);
   await application.evaluate(({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, path.join(isolated, '校外学習の準備メモ_追記例.pdf'));
@@ -112,10 +118,10 @@ try {
   await expect(page.getByRole('status').filter({ hasText: '記入済みPDFを書き出しました' })).toBeVisible();
   if (await page.getByRole('button', { name: '通知を閉じる' }).count()) await page.getByRole('button', { name: '通知を閉じる' }).click();
   await page.getByRole('button', { name: 'ページ全体に合わせる', exact: true }).click();
-  await page.getByRole('button', { name: '文字: 歩きやすい靴で来ましょう。', exact: true }).click();
+  await page.getByRole('button', { name: '文字: 雨天も実施', exact: true }).click();
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: path.join(repo, 'website/public/assets/editor-school-v1.0.7.png'), scale: 'css' });
-  console.log(JSON.stringify({ result: 'captured', appVersion: actual.version, isPackaged: true, fictionalDocument: true, annotations: 4, output: 'website/public/assets/editor-school-v1.0.7.png' }));
+  await page.screenshot({ path: path.join(repo, 'website/public/assets/editor-school-v1.0.8.png'), scale: 'css' });
+  console.log(JSON.stringify({ result: 'captured', appVersion: actual.version, isPackaged: true, fictionalDocument: true, annotations: 5, output: 'website/public/assets/editor-school-v1.0.8.png' }));
 } catch (error) {
   console.error(error);
   throw error;
