@@ -441,7 +441,7 @@ function registerIpc() {
       project = Buffer.from(editingData);
       let header;
       try { header = JSON.parse(project.toString('utf8')); } catch { throw new Error('再編集情報の形式が正しくありません。'); }
-      if (header.app !== 'LumaStudio PDF' || ![1, 2, 3].includes(header.version)) throw new Error('再編集情報の形式が正しくありません。');
+      if (header.app !== 'LumaStudio PDF' || ![1, 2, 3, 4].includes(header.version)) throw new Error('再編集情報の形式が正しくありません。');
     }
     const cleanName = path.basename(String(suggestedName || '記入済み.pdf')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
     const result = await dialog.showSaveDialog(mainWindow, {
