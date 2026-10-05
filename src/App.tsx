@@ -1,3 +1,4 @@
+import { verticalTextSize } from './lib/vertical-text';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { version as appVersion } from "../package.json";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -70,6 +71,7 @@ import {
   ensureTextFont,
   isTextFontReady,
   measureTextHeight,
+  fitTextGeometry,
   resolveTextGeometry,
 } from "./lib/fonts";
 import { createInkAnnotation, withMarkerCap, type InkKind, type InkPoint } from "./lib/ink";
@@ -161,6 +163,7 @@ export default function App() {
     useState<FontFamilyId>(DEFAULT_FONT_FAMILY);
   const [fontWeight, setFontWeight] = useState<400 | 700>(400);
   const [fontStyle, setFontStyle] = useState<"normal" | "italic">("normal");
+  const [writingMode, setWritingMode] = useState<NonNullable<Annotation["writingMode"]>>("horizontal-tb");
   const [underline, setUnderline] = useState(false);
   const [shapeKind, setShapeKind] = useState<ShapeKind>("ellipse");
   const [strokeColor, setStrokeColor] = useState("#000000");
@@ -356,6 +359,8 @@ export default function App() {
   };
   const applyText = (annotation: Annotation) => {
     const current = editsRef.current;
+    const textPage = current.pages.find((p) => p.id === annotation.pageId);
+    if (textPage) annotation = fitTextGeometry(annotation, textPage.height, textPage.width);
     const placement = textPlacementCenter.current;
     if (placement?.id === annotation.id) {
       textPlacementCenter.current = null;
@@ -387,7 +392,7 @@ export default function App() {
     setSelectedId(cleared ? null : annotation.id);
     if (!cleared && annotation.type === "text" && !isTextFontReady(annotation)) {
       const sheet = current.pages.find((page) => page.id === annotation.pageId);
-      if (sheet) void resolveTextGeometry(annotation, sheet.height)
+      if (sheet) void resolveTextGeometry(annotation, sheet.height, sheet.width)
         .then(async () => {
           // A later move, resize, or style edit may have copied this annotation
           // before its font finished loading. Prepare every matching history
@@ -403,10 +408,10 @@ export default function App() {
               if (item.id !== annotation.id || item.type !== "text" || item.text !== annotation.text) return item;
               const page = entry.pages.find((candidate) => candidate.id === item.pageId);
               if (!page) return item;
-              const height = Math.min(page.height - item.y, Math.max(item.height, measureTextHeight(item)));
-              if (height === item.height) return item;
+              const fitted = fitTextGeometry(item, page.height, page.width);
+              if (JSON.stringify(fitted) === JSON.stringify(item)) return item;
               changed = true;
-              return { ...item, height };
+              return fitted;
             });
             return changed ? { ...entry, annotations } : entry;
           });
@@ -486,6 +491,10 @@ export default function App() {
     sheet: PageInfo,
   ) => {
     const updated = { ...source, ...change };
+    if (updated.type === "text" && change.writingMode && change.writingMode !== (source.writingMode || "horizontal-tb")) {
+      if (change.writingMode === "vertical-rl") Object.assign(updated, verticalTextSize(updated.text || "", updated.fontSize || 16));
+      else { updated.width = Math.min(sheet.width, Math.max(80, source.height)); updated.height = measureTextHeight(updated); }
+    }
     if (source.type === "marker" && change.markerCap === "square" && source.markerCap !== "square")
       Object.assign(updated, withMarkerCap(source, sheet, "square"));
     if (updated.type === "shape" && change.shapeKind && change.shapeKind !== "line" && change.shapeKind !== "double-line")
@@ -520,7 +529,7 @@ export default function App() {
     updated.height = Math.min(sheet.height, Math.max(8, updated.height));
     updated.x = Math.max(0, Math.min(sheet.width - updated.width, updated.x));
     updated.y = Math.max(0, Math.min(sheet.height - updated.height, updated.y));
-    return updated;
+    return fitTextGeometry(updated, sheet.height, sheet.width);
   };
   const updateSelected = (change: Partial<Annotation>) => {
     if (!selectedId || currentRef.current.busy || signedInput) return;
@@ -985,7 +994,7 @@ export default function App() {
   const prepareTextGeometry = async (current: EditState): Promise<EditState> => {
     const annotations = await Promise.all(current.annotations.map((annotation) => {
       const sheet = current.pages.find((page) => page.id === annotation.pageId);
-      return sheet ? resolveTextGeometry(annotation, sheet.height) : annotation;
+      return sheet ? resolveTextGeometry(annotation, sheet.height, sheet.width) : annotation;
     }));
     if (annotations.every((annotation, index) => annotation === current.annotations[index])) return current;
     const prepared = { ...current, annotations };
@@ -1478,6 +1487,11 @@ export default function App() {
                       ? 18
                   : 80
               : stampSize;
+    if (tool === "text" && writingMode === "vertical-rl") {
+      const size = verticalTextSize(text, fontSize);
+      width = size.width;
+      height = size.height;
+    }
     if (tool === "stamp" && stamp.dataUrl && stamp.aspectRatio) {
       if (stamp.aspectRatio < 1) width *= stamp.aspectRatio;
       else height /= stamp.aspectRatio;
@@ -1509,7 +1523,7 @@ export default function App() {
       text: tool === "stamp" ? stamp.name : tool === "text" ? text : undefined,
       fontSize,
       ...(tool === "text"
-        ? { fontFamily, fontWeight, fontStyle, underline }
+        ? { fontFamily, fontWeight, fontStyle, underline, writingMode }
         : {}),
       ...(tool === "shape"
         ? { shapeKind, ...(shapePlacement?.lineDirection ? { lineDirection: shapePlacement.lineDirection } : {}), strokeColor: lineShape && strokeColor === "none" ? "#000000" : strokeColor,
@@ -1824,7 +1838,7 @@ export default function App() {
         ),
         color: p.type === "stamp" ? "#bb373c" : "#000000",
         ...(p.type === "text"
-          ? { fontFamily, fontWeight, fontStyle, underline }
+          ? { fontFamily, fontWeight, fontStyle, underline, writingMode }
           : {}),
         stampShape: stamp.shape,
         ...(p.type === "stamp" && stamp.dataUrl ? { stampSource: true as const } : {}),
@@ -1838,11 +1852,7 @@ export default function App() {
       );
       for (const a of additions) {
         const sheet = current.pages.find((p) => p.id === a.pageId);
-        if (sheet && a.type === "text")
-          a.height = Math.min(
-            sheet.height - a.y,
-            Math.max(a.height, measureTextHeight(a)),
-          );
+        if (sheet && a.type === "text") Object.assign(a, fitTextGeometry(a, sheet.height, sheet.width));
       }
       recordEdit({
         ...current,
@@ -2771,12 +2781,13 @@ export default function App() {
                     />
                   </label>
                   <TextStyleFields
-                    value={{ fontFamily, fontWeight, fontStyle, underline }}
+                    value={{ fontFamily, fontWeight, fontStyle, underline, writingMode }}
                     disabled={!!busy}
                     onChange={(change) => {
                       if (change.fontFamily) setFontFamily(change.fontFamily);
                       if (change.fontWeight) setFontWeight(change.fontWeight);
                       if (change.fontStyle) setFontStyle(change.fontStyle);
+                      if (change.writingMode) setWritingMode(change.writingMode);
                       if (change.underline !== undefined)
                         setUnderline(change.underline);
                     }}

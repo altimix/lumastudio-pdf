@@ -1,3 +1,4 @@
+import { drawVerticalText } from './vertical-text'
 import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNull, PDFPageLeaf, PDFRef, PDFSignature, PDFStream, PDFString, degrees } from 'pdf-lib'
 import type { PDFObject } from 'pdf-lib'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
@@ -299,6 +300,10 @@ export async function annotationToDataUrl(annotation: Annotation): Promise<strin
   } else {
     const fontSize = annotation.fontSize || 16
     context.font = textFontCss(annotation)
+    if (annotation.writingMode === 'vertical-rl') {
+      drawVerticalText(context, annotation)
+      return canvas.toDataURL('image/png')
+    }
     context.textBaseline = 'top'
     wrapTextLines(context, annotation.text || '', Math.max(1, width - 4)).forEach((line, index) => {
       const y = 2 + index * fontSize * 1.4
@@ -607,7 +612,7 @@ export async function exportPdf(originalBytes: Uint8Array, pages: PageInfo[], an
     for (const item of annotations.filter((annotation) => annotation.pageId === info.id)) {
       // A user can commit new glyphs before the background font load finishes.
       // Resolve their true height before placing the raster on the output PDF.
-      const annotation = await resolveTextGeometry(item, info.height)
+      const annotation = await resolveTextGeometry(item, info.height, info.width)
       const dataUrl = await annotationToDataUrl(annotation)
       const image = /^data:image\/jpe?g[;,]/i.test(dataUrl) ? await output.embedJpg(dataUrl) : await output.embedPng(dataUrl)
       const placement = annotationPlacement(annotation, transform)

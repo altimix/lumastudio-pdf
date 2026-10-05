@@ -20,6 +20,7 @@ export interface Annotation {
   fontFamily?: FontFamilyId
   fontWeight?: 400 | 700
   fontStyle?: 'normal' | 'italic'
+  writingMode?: 'horizontal-tb' | 'vertical-rl'
   underline?: boolean
   color?: string
   dataUrl?: string

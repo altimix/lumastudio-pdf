@@ -174,6 +174,10 @@ function validateProject(value: unknown, maximum = MAX_PROJECT_BYTES): PdfProjec
       if (annotation.fontStyle !== 'normal' && annotation.fontStyle !== 'italic') fail('文字のスタイルが不正です。')
       result.fontStyle = annotation.fontStyle
     }
+    if (annotation.writingMode !== undefined) {
+      if (type !== 'text' || !['horizontal-tb', 'vertical-rl'].includes(annotation.writingMode as string)) fail('文字の向きが不正です。')
+      result.writingMode = annotation.writingMode as Annotation['writingMode']
+    }
     if (annotation.underline !== undefined) {
       if (typeof annotation.underline !== 'boolean') fail('下線の指定が不正です。')
       result.underline = annotation.underline
@@ -229,7 +233,7 @@ export function encodeProject(project: PdfProject, localSave = false): Uint8Arra
   const maximum = localSave ? Number.MAX_SAFE_INTEGER : MAX_PROJECT_BYTES
   const clean = validateProject(project, maximum)
   const serialized = JSON.stringify({
-    app: 'LumaStudio PDF', version: 3,
+    app: 'LumaStudio PDF', version: 4,
     filename: clean.filename,
     original: encodeBase64(clean.original),
     pages: clean.pages,
@@ -248,7 +252,7 @@ export function decodeProject(bytes: Uint8Array, localSave = false): PdfProject 
   catch { fail('作業ファイルの文字形式またはJSON形式が不正です。') }
   const raw = object(parsed, '作業ファイル')
   if (raw.app !== 'LumaStudio PDF') fail('LumaStudio PDFの作業ファイルを選択してください。')
-  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) fail('この作業ファイルのバージョンには対応していません。')
+  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3 && raw.version !== 4) fail('この作業ファイルのバージョンには対応していません。')
   return validateProject({
     filename: raw.filename,
     original: decodeBase64(raw.original, maximum, '元のPDF'),

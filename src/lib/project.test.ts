@@ -34,10 +34,10 @@ function decodeRaw(value: unknown) {
 }
 
 describe('editable PDF project', () => {
-  it('writes version 3 so older apps cannot discard marker tips or line directions, and still reads versions 1 and 2', () => {
+  it('writes version 4 so older apps cannot discard vertical writing, and still reads versions 1 through 3', () => {
     const raw = rawExample()
-    expect(raw.version).toBe(3)
-    for (const version of [1, 2]) {
+    expect(raw.version).toBe(4)
+    for (const version of [1, 2, 3]) {
       raw.version = version
       expect(decodeRaw(raw)).toEqual(example())
     }
@@ -152,7 +152,7 @@ describe('editable PDF project', () => {
 
   it.each([
     ['wrong app', (raw: any) => { raw.app = 'another editor' }, /LumaStudio/],
-    ['future version', (raw: any) => { raw.version = 4 }, /バージョン/],
+    ['future version', (raw: any) => { raw.version = 5 }, /バージョン/],
     ['missing version', (raw: any) => { delete raw.version }, /バージョン/],
     ['empty page list', (raw: any) => { raw.pages = [] }, /ページ数/],
     ['too many pages', (raw: any) => { raw.pages = Array(201).fill(raw.pages[0]) }, /ページ数/],
@@ -244,3 +244,16 @@ describe('editable PDF project', () => {
     expect(() => decodeProject(bytes)).toThrow(/作業ファイル/)
   })
 })
+
+ it('preserves vertical writing and rejects unknown directions instead of silently flattening them', () => {
+   const project = example()
+   project.annotations[0].writingMode = 'vertical-rl'
+   expect(decodeProject(encodeProject(project))).toEqual(project)
+   const raw = rawExample()
+   raw.annotations[0].writingMode = 'sideways-lr'
+   expect(() => decodeRaw(raw)).toThrow('文字の向き')
+   raw.annotations[0].writingMode = null
+   expect(() => decodeRaw(raw)).toThrow('文字の向き')
+   delete raw.annotations[0].writingMode
+   expect(decodeRaw(raw).annotations[0].writingMode).toBeUndefined()
+ })

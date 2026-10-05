@@ -10,13 +10,22 @@ export function TextStyleFields({
 }: {
   value: Pick<
     Annotation,
-    "fontFamily" | "fontWeight" | "fontStyle" | "underline"
+    "fontFamily" | "fontWeight" | "fontStyle" | "underline" | "writingMode"
   >;
   onChange(change: Partial<Annotation>): void;
   disabled?: boolean;
 }) {
   return (
     <fieldset className="material-style-fields" disabled={disabled}>
+      <label>
+        文字の向き
+        <select aria-label="文字の向き" value={value.writingMode ?? "horizontal-tb"}
+          onChange={(e) => onChange({ writingMode: e.target.value as Annotation["writingMode"] })}>
+          <option value="horizontal-tb">横書き</option>
+          <option value="vertical-rl">縦書き（右から左）</option>
+        </select>
+      </label>
+      {value.writingMode === "vertical-rl" && <p className="help-text">改行すると左の列へ進みます。英数字は一文字ずつ縦に並びます。自動折り返し・禁則処理・ルビ・縦中横には対応していません。長い文章は改行や文字サイズで調整してください。</p>}
       <label>
         フォント
         <select
