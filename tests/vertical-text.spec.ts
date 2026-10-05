@@ -74,3 +74,22 @@ test('縦書きの画面と保存PDFがCropBoxと回転のある用紙でも同�
     expect(results.mismatch/results.ink, `rotation ${rotation}`).toBeLessThan(0.06)
   }
 })
+
+
+test('用紙の高さを超える縦書きは入力中も自動で左の列へ折り返さない', async ({ page }) => {
+  const source = await PDFDocument.create(); source.addPage([500,200])
+  await page.goto('/')
+  await page.getByTestId('pdf-input').setInputFiles({ name:'long-vertical.pdf', mimeType:'application/pdf', buffer:Buffer.from(await source.save()) })
+  await expect(page.getByTestId('pdf-surface')).toBeVisible({ timeout:30000 })
+  await page.getByRole('button', { name:'文字を記入', exact:true }).click()
+  await page.getByLabel('文字の向き', { exact:true }).selectOption('vertical-rl')
+  await page.getByTestId('pdf-surface').click({ position:{ x:130, y:60 } })
+  const input = page.getByRole('textbox', { name:'PDF上の文字入力', exact:true })
+  await input.fill('長い縦書き'.repeat(30))
+  await expect(input).toHaveCSS('white-space','pre')
+  await expect(input).toHaveCSS('overflow-wrap','normal')
+  await expect(input).toHaveCSS('word-break','normal')
+  const size = await input.evaluate(element => ({ width:element.clientWidth, height:element.clientHeight, scrollWidth:element.scrollWidth, scrollHeight:element.scrollHeight }))
+  expect(size.scrollHeight).toBeGreaterThan(size.height * 2)
+  expect(size.scrollWidth).toBeLessThanOrEqual(size.width + 2)
+})

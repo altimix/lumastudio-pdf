@@ -882,6 +882,9 @@ export function PdfPage({
               style={{
                 writingMode: draft.annotation.writingMode || "horizontal-tb",
                 textOrientation: "upright",
+                whiteSpace: draft.annotation.writingMode === "vertical-rl" ? "pre" : undefined,
+                overflowWrap: draft.annotation.writingMode === "vertical-rl" ? "normal" : undefined,
+                wordBreak: draft.annotation.writingMode === "vertical-rl" ? "normal" : undefined,
                 fontFamily: fontCssFamily(draft.annotation.fontFamily),
                 fontSize: (draft.annotation.fontSize || 16) * scale,
                 fontWeight: draft.annotation.fontWeight || 400,
