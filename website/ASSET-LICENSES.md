@@ -7,7 +7,8 @@
 - `public/assets/editor-v1.0.4.png`: 架空のサンプル書類で図形と蛍光ペンを配置した v1.0.4 の編集画面画像。ソースコードと同じ GPL-3.0-only に従います。
 - `public/assets/editor-v1.0.5.png`: 架空のサンプル書類に文字を記入し、縦横比ロックの初期オフを示した v1.0.5 の編集画面画像。ソースコードと同じ GPL-3.0-only に従います。
 - `public/assets/editor-v1.0.6.png`: 架空のサンプル書類に文字を記入し、架空の添付PDFを結合したページ一覧とドロップ位置の線を示した v1.0.6 の編集画面画像。ソースコードと同じ GPL-3.0-only に従います。
-- `public/assets/editor-school-v1.0.7.png`: v1.0.7の配布アプリで、架空の校外学習プリントに文字・チェック・蛍光ペンを追記した画面画像。個人情報や実在の学校の資料は使っていません。`node website/capture-school.mjs` で再生成できます。ソースコードと同じ GPL-3.0-only に従います。
+- `public/assets/editor-school-v1.0.7.png`: v1.0.7の配布アプリで、架空の校外学習プリントに文字・チェック・蛍光ペンを追記した画面画像。個人情報や実在の学校の資料は使っていません。v1.0.7のソースの `node website/capture-school.mjs` で再生成できます。ソースコードと同じ GPL-3.0-only に従います。
+- `public/assets/editor-school-v1.0.8.png`: v1.0.8の実パッケージで、架空の校外学習プリントに横書き・縦書き・チェック・蛍光ペンを追記した画面画像。個人情報や実在の学校の資料は使っていません。`node website/capture-school.mjs` で再生成できます。ソースコードと同じ GPL-3.0-only に従います。
 - `public/assets/favicon.svg`: LumaStudio PDF のアイコン。ソースコードと同じ GPL-3.0-only に従います。
 - アプリに同梱する日本語フォント: SIL Open Font License 1.1。各書体の原文は [`public/font-licenses/`](../public/font-licenses/) を参照してください。
 
