@@ -1,4 +1,9 @@
-# LumaStudio PDF
+# LumaStudio PDF（旧リポジトリ）
+
+> 開発・Issue受付・今後の公式配布先は [altimix/LumaStudioPDF](https://github.com/altimix/LumaStudioPDF) に移行します。このリポジトリは移行完了後にアーカイブし、過去のタグ・ソース・配布物は残します。公式サイトは https://lumastudiopdf.altimix.jp/ です。
+>
+> 新しいv1.1.0は、既存文字編集・端末内OCR・署名検証を持つ別実装を主にした版です。Windows x64とApple Silicon Macが対象で、旧v1.0.8との設定・作業データの自動移行はありません。旧版の原本・作業データを残してください。Intel Macはこのリポジトリのv1.0.8を引き続き利用できます。
+
 
 届いたPDFに文字や口座情報を記入し、画像の印鑑を押して返送するための、Windows・macOS向けデスクトップアプリです。動画編集ソフト「Luma Studio」と同じLumaStudioシリーズです。
 
