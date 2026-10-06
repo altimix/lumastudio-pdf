@@ -17,7 +17,7 @@ npm run deploy:check --prefix website
 
 `npm run deploy --prefix website` は `lumastudiopdf.altimix.jp` を公開更新します。実行前にアカウント、ドメイン、配布リンクを確認し、公開後はHTTPS表示・リンク・画像・モバイル画面を検証します。
 
-アプリ配布物は公開 [GitHub Release v1.0.8](https://github.com/altimix/lumastudio-pdf/releases/tag/v1.0.8) のポータブルEXE・Mac ZIPに直接リンクします。LumaStudioシリーズの共通問い合わせ窓口は `https://altimix.co.jp/contact/` です。公開作業時は `VERIFY_DOWNLOADS=1` を設定してリンクを検査します。
+アプリ配布物は公開 [GitHub Release v1.0.9](https://github.com/altimix/lumastudio-pdf/releases/tag/v1.0.9) のポータブルEXE・Mac ZIPに直接リンクします。LumaStudioシリーズの共通問い合わせ窓口は `https://altimix.co.jp/contact/` です。公開作業時は `VERIFY_DOWNLOADS=1` を設定してリンクを検査します。
 
 Google Search Console の `https://lumastudiopdf.altimix.jp/` URLプレフィックス用確認タグは `public/index.html` の `<head>` に置き、所有権を維持するため公開後も残します。`sitemap.xml` にはトップ・使い方・データの扱いの正規URLを載せ、`robots.txt` から参照します。検索への掲載や順位はGoogleの判断で決まるため、Search Consoleの実際の検査結果を確認します。
 
@@ -25,7 +25,7 @@ Google Search Console の `https://lumastudiopdf.altimix.jp/` URLプレフィッ
 
 授業プリントや校務の書類に文字・チェック・手書きを加える「PDF追記ソフト」として紹介します。競合との比較や導入実績の推測はせず、元の本文の書き換え・OCRの対象外、AIの外部送信、同じ端末での再編集条件を明記します。
 
-学校向けの画面例は、electron-builderが生成する展開済みパッケージを使って再撮影できます。スクリプトは起動したアプリがv1.0.8であることを確認します。アプリのバージョンが1.0.8のこのソースから、WindowsまたはMacで次を実行します。
+学校向けの画面例は、electron-builderが生成する展開済みパッケージを使って再撮影できます。スクリプトは起動したアプリがv1.0.9であることを確認します。アプリのバージョンが1.0.9のこのソースから、WindowsまたはMacで次を実行します。
 
 ```sh
 npm ci
