@@ -1,4 +1,4 @@
-// Recreate the website's fictional school example in the packaged v1.0.8 app.
+// Recreate the website's fictional school example in the packaged v1.0.9 app.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -30,7 +30,7 @@ try {
     BrowserWindow.getAllWindows()[0].setContentSize(1600, 900);
     return { version: app.getVersion(), packaged: app.isPackaged, userData: app.getPath('userData') };
   });
-  assert.equal(actual.version, '1.0.8');
+  assert.equal(actual.version, '1.0.9');
   assert.equal(actual.packaged, true);
   assert.equal(path.resolve(actual.userData), path.resolve(isolated));
   await page.context().route('https://api.openai.com/**', route => route.abort());
@@ -120,8 +120,8 @@ try {
   await page.getByRole('button', { name: 'ページ全体に合わせる', exact: true }).click();
   await page.getByRole('button', { name: '文字: 雨天も実施', exact: true }).click();
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: path.join(repo, 'website/public/assets/editor-school-v1.0.8.png'), scale: 'css' });
-  console.log(JSON.stringify({ result: 'captured', appVersion: actual.version, isPackaged: true, fictionalDocument: true, annotations: 5, output: 'website/public/assets/editor-school-v1.0.8.png' }));
+  await page.screenshot({ path: path.join(repo, 'website/public/assets/editor-school-v1.0.9.png'), scale: 'css' });
+  console.log(JSON.stringify({ result: 'captured', appVersion: actual.version, isPackaged: true, fictionalDocument: true, annotations: 5, output: 'website/public/assets/editor-school-v1.0.9.png' }));
 } catch (error) {
   console.error(error);
   throw error;
