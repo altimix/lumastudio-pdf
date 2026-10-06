@@ -1,9 +1,4 @@
-# LumaStudio PDF（旧リポジトリ）
-
-> 開発・Issue受付・今後の公式配布先は [altimix/LumaStudioPDF](https://github.com/altimix/LumaStudioPDF) に移行します。このリポジトリは移行完了後にアーカイブし、過去のタグ・ソース・配布物は残します。公式サイトは https://lumastudiopdf.altimix.jp/ です。
->
-> 新しいv1.1.0は、既存文字編集・端末内OCR・署名検証を持つ別実装を主にした版です。Windows x64とApple Silicon Macが対象で、旧v1.0.8との設定・作業データの自動移行はありません。旧版の原本・作業データを残してください。Intel Macはこのリポジトリのv1.0.8を引き続き利用できます。
-
+# LumaStudio PDF
 
 届いたPDFに文字や口座情報を記入し、画像の印鑑を押して返送するための、Windows・macOS向けデスクトップアプリです。動画編集ソフト「Luma Studio」と同じLumaStudioシリーズです。
 
@@ -13,7 +8,7 @@ PDFへの文字入力・押印・保存の手順は[画像付きの使い方ペ�
 
 通常編集とAI実行時のデータの扱いは[公式サイトの説明](https://lumastudiopdf.altimix.jp/privacy/)を参照してください。
 
-使い方などのお問い合わせは [株式会社Altimixの共通窓口](https://altimix.co.jp/contact/) へ。不具合や機能提案は [GitHub Issues](https://github.com/altimix/LumaStudioPDF/issues) でも受け付けます。公開Issueに実際のPDF、印影、秘密鍵、APIキーを添付しないでください。
+使い方などのお問い合わせは [株式会社Altimixの共通窓口](https://altimix.co.jp/contact/) へ。不具合や機能提案は [GitHub Issues](https://github.com/altimix/lumastudio-pdf/issues) でも受け付けます。公開Issueに実際のPDF、印影、秘密鍵、APIキーを添付しないでください。
 
 ## ライセンスと公開範囲
 
@@ -23,7 +18,7 @@ PDFへの文字入力・押印・保存の手順は[画像付きの使い方ペ�
 
 ## ダウンロードして使う
 
-Windows x64とApple Silicon Macの最新版は [移行先のGitHub Releases](https://github.com/altimix/LumaStudioPDF/releases) から取得します。Intel Macの旧版と過去の配布物は [このリポジトリのGitHub Releases](https://github.com/altimix/lumastudio-pdf/releases) に残します。以下は旧版の説明です。WindowsならポータブルEXE、Macならご自身のCPUに合うZIP（Intel／Apple Silicon）を選びます。WindowsはダウンロードしたEXEを起動し、MacはZIPを展開してアプリを「アプリケーション」へ移します。Node.jsは不要です。更新時は新しい配布ファイルへ手動で入れ替えます。印鑑・プロフィール・AI設定はOSの利用者データ領域に保存され、EXEやZIPを削除しても自動では消えません。
+[GitHub Releases](https://github.com/altimix/lumastudio-pdf/releases) から、WindowsならポータブルEXE、Macならご自身のCPUに合うZIP（Intel／Apple Silicon）を選びます。WindowsはダウンロードしたEXEを起動し、MacはZIPを展開してアプリを「アプリケーション」へ移します。Node.jsは不要です。更新時は新しい配布ファイルへ手動で入れ替えます。印鑑・プロフィール・AI設定はOSの利用者データ領域に保存され、EXEやZIPを削除しても自動では消えません。
 
 Mac版はDeveloper ID署名・Apple公証を使わず、整合性確認用のアドホック署名を付けて配布します。開発元を確認できない警告が出た場合は、配布元を確認してから **システム設定 → プライバシーとセキュリティ → LumaStudio PDF の「このまま開く」** でアプリを個別に許可します。初回の詳しい手順は、ZIPとReleaseに同梱する [Mac版の起動案内](README-Mac.txt) を参照してください。許可画面の表示や起動は、端末の管理設定にも依存します。[Apple公式の説明](https://support.apple.com/ja-jp/guide/mac-help/mh40616/mac)
 
