@@ -153,6 +153,7 @@ export default function App() {
   const history = useRef<EditState[]>([EMPTY]);
   const cursor = useRef(0);
   const [savedState, setSavedState] = useState("");
+  const [signedDraftPending, setSignedDraftPending] = useState(false);
   const [activeId, setActiveId] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
@@ -263,6 +264,7 @@ export default function App() {
   const stateKey = JSON.stringify(edits);
   const dirty =
     !!pdf && (stateKey !== savedState || textEditing || numericEditing);
+  const signedDraftUnsaved = dirty && signedDraftPending;
   const page =
     edits.pages.find((item) => item.id === activeId) ?? edits.pages[0];
   const pageIndex = page ? edits.pages.indexOf(page) : -1;
@@ -747,6 +749,7 @@ export default function App() {
       history.current = [initial];
       cursor.current = 0;
       setSavedState(JSON.stringify(initial));
+      setSignedDraftPending(false);
       setActiveId(loaded.pages[0].id);
       setSelectedId(null);
       setTool("select");
@@ -1040,6 +1043,7 @@ export default function App() {
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
       setSavedState(JSON.stringify(prepared));
+      setSignedDraftPending(false);
       notify("記入済みPDFを書き出しました。メールに添付して返送できます。");
       return "saved";
     } catch (e) {
@@ -1079,6 +1083,7 @@ export default function App() {
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
       setSavedState(JSON.stringify(prepared));
+      setSignedDraftPending(false);
       setProjectOpen(false);
       notify("編集を再開できる作業データを保存しました。");
       return "saved";
@@ -1167,6 +1172,7 @@ export default function App() {
       history.current = [next];
       cursor.current = 0;
       setSavedState(JSON.stringify(next));
+      setSignedDraftPending(false);
       setFilename(fromSavedPdf && savedPdfName ? savedPdfName : data.filename);
       setActiveId(pages[0].id);
       setSelectedId(null);
@@ -1231,10 +1237,14 @@ export default function App() {
         options,
       );
       if (!saved) throw new Error("保存をキャンセルしました。");
-      setSavedState(JSON.stringify(current));
+      // A signed PDF is read-only and does not contain our editable project.
+      // Keep the draft's save baseline; signing alone must not clear dirty.
+      setSignedDraftPending(JSON.stringify(current) !== savedState);
       setSignatureOpen(false);
       notify(
-        "電子署名済みPDFを保存しました。開いている画面は署名前の作業用原稿です。",
+        JSON.stringify(current) !== savedState
+          ? "電子署名済みPDFを保存しました。編集用原稿は未保存です。"
+          : "電子署名済みPDFを保存しました。開いている画面は署名前の作業用原稿です。",
       );
     } finally {
       setBusy("");
@@ -2043,6 +2053,20 @@ export default function App() {
             )}
           </div>
         </div>
+        {signedDraftUnsaved && (
+          <div className="signed-draft-notice" role="status" aria-label="編集用原稿の保存">
+            <span>署名済みPDFは保存しました。編集用原稿は未保存です。</span>
+            <button
+              disabled={!!busy}
+              onClick={() => {
+                setProjectError("");
+                setProjectOpen(true);
+              }}
+            >
+              編集用原稿を保存
+            </button>
+          </div>
+        )}
         <div className="toolbar">
           <div className="tool-group">
             {toolItems.map((item) => (

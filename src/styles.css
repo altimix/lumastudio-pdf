@@ -198,6 +198,25 @@ h3 {
   color: #5c7278;
   font-size: 12px;
 }
+.signed-draft-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  flex-shrink: 0;
+  padding: 8px 22px;
+  border-bottom: 1px solid #ead4aa;
+  background: #fff7e6;
+  color: #765a24;
+  font-size: 12px;
+}
+.signed-draft-notice > span {
+  flex: 1;
+}
+.signed-draft-notice button {
+  flex-shrink: 0;
+  font-size: 12px;
+}
 .document-name > span:first-of-type {
   max-width: 35vw;
   overflow: hidden;
