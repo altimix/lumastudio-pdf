@@ -659,8 +659,15 @@ h3 {
   outline: 1px dashed #79aa9d;
 }
 .annotation.selected {
+  outline: none;
+}
+.annotation.selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
   outline: 1.5px solid #2e8a79;
-  background: #489c8610;
+  pointer-events: none;
 }
 .annotation img {
   display: block;

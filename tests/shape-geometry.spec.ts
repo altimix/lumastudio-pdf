@@ -6,6 +6,21 @@ type Geometry = { x: number; y: number; width: number; height: number };
 type Shape = Geometry & { type: string; shapeKind: string; fillColor: string; strokeColor: string; strokeWidth: number; lineDirection?: string };
 type Project = { annotations: Shape[]; pages: { rotation: number }[] };
 
+async function surfacePixel(page: Page, x: number, y: number, screenshotPath?: string) {
+  const surface = page.getByTestId('pdf-surface');
+  const screenshot = await surface.screenshot({ path: screenshotPath });
+  return page.evaluate(async ({ image, x, y }) => {
+    const picture = new Image();
+    picture.src = `data:image/png;base64,${image}`;
+    await picture.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = picture.width; canvas.height = picture.height;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(picture, 0, 0);
+    return Array.from(context.getImageData(Math.round(x), Math.round(y), 1, 1).data).slice(0, 3);
+  }, { image: screenshot.toString('base64'), x, y });
+}
+
 async function openFixture(page: Page) {
   const pdf = await PDFDocument.create();
   pdf.addPage([500, 700]);
@@ -85,6 +100,82 @@ async function openProject(page: Page, path: string) {
 test.beforeEach(async ({ context }) => {
   await context.route('**/api/autofill', route => route.abort());
   await context.route('https://api.openai.com/**', route => route.abort());
+});
+
+test('重なった要素は選択・リサイズ中も保存順に表示され、選択ハンドルだけが手前に出る', async ({ page }, info) => {
+  const original = await PDFDocument.create();
+  original.addPage([500, 700]);
+  const project = {
+    app: 'LumaStudio PDF', version: 4, filename: 'overlap.pdf',
+    original: Buffer.from(await original.save()).toString('base64'),
+    pages: [{ id: 'page', sourceIndex: 0, width: 500, height: 700, rotation: 0, viewportTransform: [1, 0, 0, -1, 0, 700] }],
+    annotations: [
+      { id: 'back', pageId: 'page', type: 'shape', shapeKind: 'rectangle', x: 60, y: 80, width: 160, height: 120, fillColor: '#ff0000', strokeColor: 'none', strokeWidth: 0 },
+      { id: 'front', pageId: 'page', type: 'shape', shapeKind: 'rectangle', x: 100, y: 100, width: 160, height: 80, fillColor: '#0000ff', strokeColor: 'none', strokeWidth: 0 },
+    ],
+  };
+  await page.goto('/');
+  await page.getByTestId('project-input').setInputFiles({ name: 'overlap.lumapdf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+  const surface = page.getByTestId('pdf-surface');
+  await expect(surface).toBeVisible({ timeout: 30_000 });
+  const back = page.locator('.annotation').nth(0);
+  await expect(back.locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  await expect(page.locator('.annotation').nth(1).locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  const scale = await surface.evaluate(element => (element as HTMLElement).offsetWidth / 500);
+  const point = { x: 140 * scale, y: 130 * scale };
+  expect(await surfacePixel(page, point.x, point.y)).toEqual([0, 0, 255]);
+  await back.click({ position: { x: 10 * scale, y: 10 * scale } });
+  await expect(back).toHaveAttribute('aria-pressed', 'true');
+  expect(await surfacePixel(page, point.x, point.y, info.outputPath('selected-overlap.png'))).toEqual([0, 0, 255]);
+  // The right resize handle lies inside the later blue rectangle. It must still
+  // be reachable, without lifting the red content above the blue content.
+  await dragHandle(page, back, 'e', 20 * scale, 0);
+  expect((await geometry(back)).width / scale).toBeCloseTo(180, 0);
+  expect(await surfacePixel(page, point.x, point.y)).toEqual([0, 0, 255]);
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  expect((await geometry(back)).width / scale).toBeCloseTo(160, 0);
+  await page.getByRole('button', { name: 'やり直す', exact: true }).click();
+  expect((await geometry(back)).width / scale).toBeCloseTo(180, 0);
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'PDFを保存', exact: true }).click();
+  const saved = info.outputPath('overlap.pdf');
+  await (await downloadEvent).saveAs(saved);
+  await page.getByTestId('pdf-input').setInputFiles(saved);
+  await expect(page.locator('.annotation')).toHaveCount(0);
+  await expect.poll(() => surfacePixel(page, point.x, point.y)).toEqual([0, 0, 255]);
+  await surface.screenshot({ path: info.outputPath('saved-overlap.png') });
+});
+
+test('消しゴムで消去保留中の線も後から追加した順に図形の上へ表示する', async ({ page }) => {
+  const original = await PDFDocument.create(); original.addPage([500, 700]);
+  const project = {
+    app: 'LumaStudio PDF', version: 4, filename: 'erase-overlap.pdf',
+    original: Buffer.from(await original.save()).toString('base64'),
+    pages: [{ id: 'page', sourceIndex: 0, width: 500, height: 700, rotation: 0, viewportTransform: [1, 0, 0, -1, 0, 700] }],
+    annotations: [
+      { id: 'back', pageId: 'page', type: 'shape', shapeKind: 'rectangle', x: 60, y: 80, width: 160, height: 120, fillColor: '#ff0000', strokeColor: 'none', strokeWidth: 0 },
+      { id: 'ink', pageId: 'page', type: 'pen', x: 100, y: 100, width: 160, height: 80, color: '#000000', strokeWidth: 24, points: [{ x: 0, y: 0.5 }, { x: 1, y: 0.5 }] },
+    ],
+  };
+  await page.goto('/');
+  await page.getByTestId('project-input').setInputFiles({ name: 'erase-overlap.lumapdf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+  const surface = page.getByTestId('pdf-surface');
+  await expect(surface).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.annotation img')).toHaveCount(2);
+  const scale = await surface.evaluate(element => (element as HTMLElement).offsetWidth / 500);
+  await expect.poll(() => surfacePixel(page, 140 * scale, 140 * scale)).toEqual([0, 0, 0]);
+  await page.getByRole('button', { name: '消しゴム', exact: true }).click();
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('PDFが表示されていません');
+  await page.mouse.move(box.x + 140 * scale, box.y + 140 * scale);
+  await page.mouse.down();
+  await expect(page.locator('.annotation.pending-erase')).toHaveCount(1);
+  const pendingPixel = await surfacePixel(page, 170 * scale, 140 * scale);
+  expect(pendingPixel[0]).toBeLessThan(230);
+  expect(pendingPixel.slice(1)).toEqual([0, 0]);
+  await page.mouse.up();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  expect(await surfacePixel(page, 170 * scale, 140 * scale)).toEqual([255, 0, 0]);
 });
 
 test('枠線と塗りを両方消した透明な図形を作らず、線幅0の場合も表示を保つ', async ({ page }, info) => {

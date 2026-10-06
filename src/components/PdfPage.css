@@ -9,14 +9,18 @@
 .pdf-surface.panning .annotation:active {
   cursor: grabbing;
 }
-.annotation { z-index: 2; }
-.annotation.selected { z-index: 3; }
+/* Keep contents in document order. Only editor controls float above them. */
+.annotation { z-index: auto; }
+.annotation > img {
+  position: relative;
+  z-index: 2;
+}
 .annotation.editing {
   visibility: hidden;
 }
 .annotation-resize-handle {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   display: grid;
   place-items: center;
   width: 28px;
@@ -219,4 +223,4 @@
   height: 100%;
   pointer-events: none;
 }
-.annotation.pending-erase { opacity: .28; }
+.annotation.pending-erase > img { opacity: .28; }
