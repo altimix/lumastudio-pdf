@@ -146,6 +146,38 @@ test('重なった要素は選択・リサイズ中も保存順に表示され�
   await surface.screenshot({ path: info.outputPath('saved-overlap.png') });
 });
 
+test('消しゴムで消去保留中の線も後から追加した順に図形の上へ表示する', async ({ page }) => {
+  const original = await PDFDocument.create(); original.addPage([500, 700]);
+  const project = {
+    app: 'LumaStudio PDF', version: 4, filename: 'erase-overlap.pdf',
+    original: Buffer.from(await original.save()).toString('base64'),
+    pages: [{ id: 'page', sourceIndex: 0, width: 500, height: 700, rotation: 0, viewportTransform: [1, 0, 0, -1, 0, 700] }],
+    annotations: [
+      { id: 'back', pageId: 'page', type: 'shape', shapeKind: 'rectangle', x: 60, y: 80, width: 160, height: 120, fillColor: '#ff0000', strokeColor: 'none', strokeWidth: 0 },
+      { id: 'ink', pageId: 'page', type: 'pen', x: 100, y: 100, width: 160, height: 80, color: '#000000', strokeWidth: 24, points: [{ x: 0, y: 0.5 }, { x: 1, y: 0.5 }] },
+    ],
+  };
+  await page.goto('/');
+  await page.getByTestId('project-input').setInputFiles({ name: 'erase-overlap.lumapdf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+  const surface = page.getByTestId('pdf-surface');
+  await expect(surface).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.annotation img')).toHaveCount(2);
+  const scale = await surface.evaluate(element => (element as HTMLElement).offsetWidth / 500);
+  await expect.poll(() => surfacePixel(page, 140 * scale, 140 * scale)).toEqual([0, 0, 0]);
+  await page.getByRole('button', { name: '消しゴム', exact: true }).click();
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('PDFが表示されていません');
+  await page.mouse.move(box.x + 140 * scale, box.y + 140 * scale);
+  await page.mouse.down();
+  await expect(page.locator('.annotation.pending-erase')).toHaveCount(1);
+  const pendingPixel = await surfacePixel(page, 170 * scale, 140 * scale);
+  expect(pendingPixel[0]).toBeLessThan(230);
+  expect(pendingPixel.slice(1)).toEqual([0, 0]);
+  await page.mouse.up();
+  await expect(page.locator('.annotation')).toHaveCount(1);
+  expect(await surfacePixel(page, 170 * scale, 140 * scale)).toEqual([255, 0, 0]);
+});
+
 test('枠線と塗りを両方消した透明な図形を作らず、線幅0の場合も表示を保つ', async ({ page }, info) => {
   await openFixture(page);
   await page.getByRole('button', { name: '図形', exact: true }).click();

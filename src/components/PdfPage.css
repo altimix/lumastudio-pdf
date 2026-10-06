@@ -223,4 +223,4 @@
   height: 100%;
   pointer-events: none;
 }
-.annotation.pending-erase { opacity: .28; }
+.annotation.pending-erase > img { opacity: .28; }
