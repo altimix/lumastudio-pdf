@@ -269,3 +269,8 @@ button, summary { font: inherit; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+.series-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 26px; border-top: 1px solid var(--line); padding-block: 26px; font-size: 13px; }
+.series-links strong { font-size: 12px; }
+.series-links a { color: var(--ink); text-underline-offset: 4px; }
+@media (max-width: 740px) { .series-links { gap: 12px 20px; font-size: 12px; } .series-links strong { width: 100%; } }
