@@ -150,6 +150,23 @@ try {
       if (contentLength !== null) assert.ok(Number(contentLength) > 0, `Download empty: ${href}`);
     }
   }
+  const seriesPage = await browser.newPage();
+  for (const width of [1280, 390, 320]) {
+    await seriesPage.setViewportSize({ width, height: 844 });
+    for (const route of ['/', '/guide/', '/privacy/', '/missing-page']) {
+      await seriesPage.goto(new URL(route, origin).href);
+      const series = seriesPage.getByRole('navigation', { name: 'LumaStudioシリーズ' });
+      assert.equal(await series.count(), 1, route);
+      for (const url of ['https://lumastudio.altimix.jp/', 'https://lumastudiopdf.altimix.jp/', 'https://lumastudiocad.altimix.jp/']) {
+        const link = series.locator(`a[href="${url}"]`);
+        assert.equal(await link.count(), 1, route + url);
+        assert.equal(await link.isVisible(), true);
+      }
+      assert.equal(await seriesPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width} ${route}`);
+      if (width === 390) await series.screenshot({ path: `test-results/website/series-${route.replaceAll('/', '') || 'home'}-390.png` });
+    }
+  }
+  await seriesPage.close();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ result: 'passed', site, desktop: true, mobile: true, seo: true, assets: true, downloadsChecked: process.env.VERIFY_DOWNLOADS === '1' }));
 } finally {
